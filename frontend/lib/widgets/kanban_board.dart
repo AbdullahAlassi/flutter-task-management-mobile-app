@@ -220,13 +220,20 @@ class _KanbanBoardState extends State<KanbanBoard> {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Expanded(
-                child: Text(
-                  board.title,
-                  style: const TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                  ),
-                  overflow: TextOverflow.ellipsis,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      board.title,
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 4),
+                    _buildStatusChip(board.status),
+                  ],
                 ),
               ),
               Container(
@@ -295,6 +302,43 @@ class _KanbanBoardState extends State<KanbanBoard> {
             ],
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildStatusChip(String status) {
+    Color chipColor;
+    switch (status) {
+      case 'todo':
+        chipColor = Colors.blue;
+        break;
+      case 'in_progress':
+        chipColor = Colors.orange;
+        break;
+      case 'review':
+        chipColor = Colors.purple;
+        break;
+      case 'done':
+        chipColor = Colors.green;
+        break;
+      default:
+        chipColor = Colors.grey;
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: chipColor.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: chipColor),
+      ),
+      child: Text(
+        status.replaceAll('_', ' ').toUpperCase(),
+        style: TextStyle(
+          color: chipColor,
+          fontSize: 12,
+          fontWeight: FontWeight.bold,
+        ),
       ),
     );
   }

@@ -26,11 +26,12 @@ class SubtaskService {
 
       const order = highestOrderSubtask ? highestOrderSubtask.order + 1 : 0
 
-      // Create the subtask
+      // Create the subtask with assignees
       const subtask = new Subtask({
         ...subtaskData,
         task: taskId,
         order,
+        assignees: subtaskData.assignees || [] // Initialize assignees array
       })
 
       await subtask.save()
@@ -49,6 +50,18 @@ class SubtaskService {
           itemType: "Subtask",
         },
       })
+
+      // Create notifications for assignees if any
+      if (subtask.assignees && subtask.assignees.length > 0) {
+        await notificationService.createSubtaskAssignmentNotification(
+          subtask._id,
+          subtask.title,
+          task._id,
+          task.title,
+          userId,
+          subtask.assignees
+        )
+      }
 
       return subtask
     } catch (error) {

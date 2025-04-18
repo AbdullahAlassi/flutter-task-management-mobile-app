@@ -92,14 +92,17 @@ const taskValidation = {
 // Subtask validation schemas
 const subtaskValidation = {
   create: Joi.object({
-    title: Joi.string().required().min(1).max(100),
-    deadline: Joi.date().iso().allow(null),
+    title: Joi.string().required().min(3).max(100),
+    deadline: Joi.date().optional(),
+    assignees: Joi.array().items(Joi.string().hex().length(24)).optional()
   }),
   update: Joi.object({
-    title: Joi.string().min(1).max(100),
+    title: Joi.string().min(3).max(100),
+    deadline: Joi.date(),
     isCompleted: Joi.boolean(),
-    deadline: Joi.date().iso().allow(null),
-  }),
+    order: Joi.number(),
+    assignees: Joi.array().items(Joi.string().hex().length(24))
+  })
 }
 
 // Team validation schemas

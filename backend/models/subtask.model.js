@@ -14,6 +14,10 @@ const subtaskSchema = new mongoose.Schema({
     ref: 'Task',
     required: true
   },
+  assignees: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+  }],
   isCompleted: {
     type: Boolean,
     default: false

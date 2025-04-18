@@ -56,20 +56,6 @@ class ProfileScreen extends StatelessWidget {
             Text(user.name, style: Theme.of(context).textTheme.headlineSmall),
             Text(user.email, style: Theme.of(context).textTheme.bodyLarge),
             const SizedBox(height: 8),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.primary.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: Text(
-                user.role,
-                style: TextStyle(
-                  color: Theme.of(context).colorScheme.primary,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ),
             const SizedBox(height: 32),
             _buildProfileItem(
               context,

@@ -9,6 +9,8 @@ import 'package:frontend/core/services/subtask_service.dart';
 import 'package:frontend/widgets/user_avatar.dart';
 import 'package:frontend/core/services/user_service.dart';
 import 'package:frontend/widgets/subtask_card.dart';
+import 'package:frontend/screens/attachments/attachment_preview_screen.dart';
+import 'package:frontend/widgets/member_selection.dart';
 
 class TaskDetailScreen extends StatefulWidget {
   final Task task;
@@ -33,11 +35,18 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
     super.initState();
     _task = widget.task;
     _loadSubtasks();
-    // In a real app, you would load subtasks and attachments here
-    // For now, we'll just use the References.pdf as shown in the design
-    _attachments = [
-      {'name': 'References.pdf', 'type': 'pdf'},
-    ];
+    // Use the actual attachments from the task instead of hardcoded example
+    _attachments =
+        _task.attachments
+            .map(
+              (attachment) => {
+                'name': attachment.name,
+                'type': attachment.type,
+                'url': attachment.url,
+                'uploadedAt': attachment.uploadedAt.toIso8601String(),
+              },
+            )
+            .toList();
   }
 
   Future<void> _loadSubtasks() async {
@@ -377,14 +386,27 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
           {'attachments': updatedAttachments.map((a) => a.toJson()).toList()},
         );
 
-        setState(() {
-          _task = updatedTask;
-          _isLoading = false;
-        });
+        if (mounted) {
+          setState(() {
+            _task = updatedTask;
+            _attachments =
+                updatedTask.attachments
+                    .map(
+                      (a) => {
+                        'name': a.name,
+                        'type': a.type,
+                        'url': a.url,
+                        'uploadedAt': a.uploadedAt.toIso8601String(),
+                      },
+                    )
+                    .toList();
+            _isLoading = false;
+          });
 
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Attachment added successfully')),
-        );
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Attachment added successfully')),
+          );
+        }
       } catch (e) {
         setState(() {
           _error = e.toString();
@@ -467,56 +489,227 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            const Text(
-              'Attachments',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            Text(
+              'Attachments (${_attachments.length})',
+              style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
             ),
-            IconButton(icon: const Icon(Icons.add), onPressed: _addAttachment),
+            IconButton(
+              icon: const Icon(Icons.add_circle_outline),
+              onPressed: _addAttachment,
+              tooltip: 'Add Attachment',
+              color: Colors.blue,
+            ),
           ],
         ),
         const SizedBox(height: 8),
-        if (_task.attachments.isEmpty)
-          const Text('No attachments yet')
-        else
-          ListView.builder(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            itemCount: _task.attachments.length,
-            itemBuilder: (context, index) {
-              final attachment = _task.attachments[index];
-              return ListTile(
-                leading: Icon(
-                  _getAttachmentIcon(attachment.type),
-                  color: Colors.blue,
-                ),
-                title: Text(attachment.name),
-                subtitle: Text(
-                  'Uploaded ${_formatDate(attachment.uploadedAt)}',
-                ),
-                trailing: IconButton(
-                  icon: const Icon(Icons.download),
-                  onPressed: () {
-                    // TODO: Implement download functionality
-                  },
-                ),
-              );
-            },
+        if (_attachments.isNotEmpty)
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children:
+                _attachments.map((attachment) {
+                  // Check if it's an image by looking at the type string
+                  final isImage =
+                      attachment['type']?.toString().toLowerCase().startsWith(
+                        'image',
+                      ) ??
+                      false;
+
+                  return InkWell(
+                    onTap: () {
+                      String url = attachment['url'] ?? '';
+                      // Convert local file path to file:// URL if it's a local path
+                      if (url.startsWith('/') || url.contains(':\\')) {
+                        url = 'file://$url';
+                      }
+
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder:
+                              (_) => AttachmentPreviewScreen(
+                                attachmentUrl: url,
+                                fileName: attachment['name'] ?? 'Unknown file',
+                                fileType:
+                                    attachment['type'] ??
+                                    'application/octet-stream',
+                                onDelete: () async {
+                                  try {
+                                    final authProvider =
+                                        Provider.of<AuthProvider>(
+                                          context,
+                                          listen: false,
+                                        );
+                                    if (authProvider.token == null) {
+                                      throw Exception(
+                                        'Authentication token is missing',
+                                      );
+                                    }
+
+                                    // Create a new list without the deleted attachment
+                                    final updatedAttachments =
+                                        _task.attachments
+                                            .where(
+                                              (a) =>
+                                                  a.url != attachment['url'] &&
+                                                  a.name != attachment['name'],
+                                            )
+                                            .toList();
+
+                                    // Update the task with the new attachments list
+                                    final updatedTask = await _taskService
+                                        .updateTask(
+                                          authProvider.token!,
+                                          _task.id,
+                                          {
+                                            'attachments':
+                                                updatedAttachments
+                                                    .map((a) => a.toJson())
+                                                    .toList(),
+                                          },
+                                        );
+
+                                    // Update both the task and the local attachments list
+                                    if (mounted) {
+                                      setState(() {
+                                        _task = updatedTask;
+                                        _attachments =
+                                            _attachments
+                                                .where(
+                                                  (a) =>
+                                                      a['url'] !=
+                                                          attachment['url'] &&
+                                                      a['name'] !=
+                                                          attachment['name'],
+                                                )
+                                                .toList();
+                                      });
+                                    }
+
+                                    if (mounted) {
+                                      ScaffoldMessenger.of(
+                                        context,
+                                      ).showSnackBar(
+                                        const SnackBar(
+                                          content: Text(
+                                            'Attachment deleted successfully',
+                                          ),
+                                        ),
+                                      );
+                                    }
+                                  } catch (e) {
+                                    if (mounted) {
+                                      ScaffoldMessenger.of(
+                                        context,
+                                      ).showSnackBar(
+                                        SnackBar(
+                                          content: Text(
+                                            'Error deleting attachment: $e',
+                                          ),
+                                        ),
+                                      );
+                                    }
+                                  }
+                                },
+                              ),
+                        ),
+                      );
+                    },
+                    child: Container(
+                      width: 100,
+                      height: 100,
+                      decoration: BoxDecoration(
+                        color: Colors.grey[200],
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child:
+                          isImage
+                              ? ClipRRect(
+                                borderRadius: BorderRadius.circular(8),
+                                child: Image.network(
+                                  attachment['url'] ?? '',
+                                  fit: BoxFit.cover,
+                                  errorBuilder: (context, error, stackTrace) {
+                                    print('Error loading image: $error');
+                                    return Center(
+                                      child: Column(
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.center,
+                                        children: [
+                                          Icon(
+                                            Icons.broken_image,
+                                            color: Colors.grey[600],
+                                          ),
+                                          const SizedBox(height: 4),
+                                          Text(
+                                            'Error loading image',
+                                            style: TextStyle(
+                                              fontSize: 10,
+                                              color: Colors.grey[600],
+                                            ),
+                                            textAlign: TextAlign.center,
+                                          ),
+                                        ],
+                                      ),
+                                    );
+                                  },
+                                ),
+                              )
+                              : Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Icon(
+                                    _getFileIcon(attachment['type']),
+                                    size: 32,
+                                    color: Colors.grey[600],
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Padding(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 4,
+                                    ),
+                                    child: Text(
+                                      attachment['name'] ?? 'Unknown file',
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        color: Colors.grey[600],
+                                      ),
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                      textAlign: TextAlign.center,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                    ),
+                  );
+                }).toList(),
           ),
       ],
     );
   }
 
-  IconData _getAttachmentIcon(String type) {
-    switch (type.toLowerCase()) {
-      case 'pdf':
-        return Icons.picture_as_pdf;
-      case 'doc':
-        return Icons.description;
-      case 'image':
-        return Icons.image;
-      default:
-        return Icons.attach_file;
+  IconData _getFileIcon(String? fileType) {
+    if (fileType == null) return Icons.insert_drive_file;
+
+    final type = fileType.toLowerCase();
+    if (type.startsWith('image/') || type.contains('image')) {
+      return Icons.image;
+    } else if (type.startsWith('video/') || type.contains('video')) {
+      return Icons.video_file;
+    } else if (type.startsWith('audio/') || type.contains('audio')) {
+      return Icons.audio_file;
+    } else if (type.contains('pdf')) {
+      return Icons.picture_as_pdf;
+    } else if (type.contains('word') || type.contains('doc')) {
+      return Icons.description;
+    } else if (type.contains('excel') || type.contains('sheet')) {
+      return Icons.table_chart;
+    } else if (type.contains('powerpoint') || type.contains('presentation')) {
+      return Icons.slideshow;
+    } else if (type.contains('zip') || type.contains('compressed')) {
+      return Icons.archive;
     }
+    return Icons.insert_drive_file;
   }
 
   String _formatDate(DateTime date) {
@@ -594,18 +787,6 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
           ),
         ),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.star_border, color: Colors.black),
-            onPressed: () {
-              // Implement favorite functionality
-            },
-          ),
-          IconButton(
-            icon: const Icon(Icons.more_horiz, color: Colors.black),
-            onPressed: () {
-              // Show more options
-            },
-          ),
           IconButton(
             icon: const Icon(Icons.edit),
             onPressed: _showStatusEditDialog,
@@ -1007,75 +1188,9 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
   }
 
   Future<void> _showAddSubtaskDialog() async {
-    final titleController = TextEditingController();
-    DateTime? selectedDeadline;
-
     final result = await showDialog<Map<String, dynamic>>(
       context: context,
-      builder:
-          (context) => StatefulBuilder(
-            builder: (context, setState) {
-              return AlertDialog(
-                title: const Text('Add Sub-Task'),
-                content: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    TextField(
-                      controller: titleController,
-                      decoration: const InputDecoration(
-                        labelText: 'Title',
-                        hintText: 'Enter subtask title',
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    Row(
-                      children: [
-                        Text(
-                          'Deadline: ${selectedDeadline != null ? DateFormat('MMM d, y').format(selectedDeadline!) : 'Not set'}',
-                        ),
-                        const SizedBox(width: 8),
-                        TextButton(
-                          onPressed: () async {
-                            final date = await showDatePicker(
-                              context: context,
-                              initialDate: DateTime.now(),
-                              firstDate: DateTime.now(),
-                              lastDate: DateTime.now().add(
-                                const Duration(days: 365),
-                              ),
-                            );
-                            if (date != null) {
-                              setState(() {
-                                selectedDeadline = date;
-                              });
-                            }
-                          },
-                          child: const Text('Set Deadline'),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-                actions: [
-                  TextButton(
-                    onPressed: () => Navigator.of(context).pop(),
-                    child: const Text('Cancel'),
-                  ),
-                  TextButton(
-                    onPressed: () {
-                      if (titleController.text.trim().isNotEmpty) {
-                        Navigator.of(context).pop({
-                          'title': titleController.text.trim(),
-                          'deadline': selectedDeadline?.toIso8601String(),
-                        });
-                      }
-                    },
-                    child: const Text('Add'),
-                  ),
-                ],
-              );
-            },
-          ),
+      builder: (context) => _AddSubtaskDialog(taskAssignees: _task.assignees),
     );
 
     if (result != null) {
@@ -1136,6 +1251,115 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
         ),
         onPressed: _showAddSubtaskDialog,
       ),
+    );
+  }
+}
+
+class _AddSubtaskDialog extends StatefulWidget {
+  final List<User> taskAssignees;
+
+  const _AddSubtaskDialog({required this.taskAssignees});
+
+  @override
+  State<_AddSubtaskDialog> createState() => _AddSubtaskDialogState();
+}
+
+class _AddSubtaskDialogState extends State<_AddSubtaskDialog> {
+  final _titleController = TextEditingController();
+  DateTime? _deadline;
+  List<User> _selectedAssignees = [];
+
+  @override
+  void dispose() {
+    _titleController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Add Sub-Task'),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: _titleController,
+              decoration: const InputDecoration(
+                labelText: 'Title',
+                hintText: 'Enter subtask title',
+              ),
+            ),
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                Text(
+                  'Deadline: ${_deadline != null ? DateFormat('MMM d, y').format(_deadline!) : 'Not set'}',
+                ),
+                const SizedBox(width: 8),
+                TextButton(
+                  onPressed: () async {
+                    final date = await showDatePicker(
+                      context: context,
+                      initialDate: DateTime.now(),
+                      firstDate: DateTime.now(),
+                      lastDate: DateTime.now().add(const Duration(days: 365)),
+                    );
+                    if (date != null) {
+                      setState(() {
+                        _deadline = date;
+                      });
+                    }
+                  },
+                  child: const Text('Set Deadline'),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            const Text('Assign to:'),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children:
+                  widget.taskAssignees.map((user) {
+                    final isSelected = _selectedAssignees.contains(user);
+                    return FilterChip(
+                      label: Text(user.name),
+                      selected: isSelected,
+                      onSelected: (selected) {
+                        setState(() {
+                          if (selected) {
+                            _selectedAssignees.add(user);
+                          } else {
+                            _selectedAssignees.remove(user);
+                          }
+                        });
+                      },
+                    );
+                  }).toList(),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancel'),
+        ),
+        TextButton(
+          onPressed: () {
+            if (_titleController.text.trim().isNotEmpty) {
+              Navigator.of(context).pop({
+                'title': _titleController.text.trim(),
+                'deadline': _deadline?.toIso8601String(),
+                'assignees': _selectedAssignees.map((user) => user.id).toList(),
+              });
+            }
+          },
+          child: const Text('Add'),
+        ),
+      ],
     );
   }
 }

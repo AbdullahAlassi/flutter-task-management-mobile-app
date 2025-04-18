@@ -23,7 +23,13 @@ class SubtaskService {
       final responseData = jsonDecode(response.body);
 
       if (response.statusCode == 201) {
-        return responseData['data']['subtask'];
+        // Handle both response structures
+        if (responseData['data'] != null &&
+            responseData['data']['subtask'] != null) {
+          return responseData['data']['subtask'];
+        } else {
+          return responseData;
+        }
       } else {
         throw ApiException(
           message: responseData['message'] ?? 'Failed to create subtask',
@@ -55,9 +61,16 @@ class SubtaskService {
       final responseData = jsonDecode(response.body);
 
       if (response.statusCode == 200) {
-        return List<Map<String, dynamic>>.from(
-          responseData['data']['subtasks'],
-        );
+        if (responseData['data'] != null &&
+            responseData['data']['subtasks'] != null) {
+          return List<Map<String, dynamic>>.from(
+            responseData['data']['subtasks'],
+          );
+        } else {
+          return List<Map<String, dynamic>>.from(
+            responseData['subtasks'] ?? [],
+          );
+        }
       } else {
         throw ApiException(
           message: responseData['message'] ?? 'Failed to load subtasks',
