@@ -19,7 +19,6 @@ class _CreateProjectScreenState extends State<CreateProjectScreen> {
   final _titleController = TextEditingController();
   final _descriptionController = TextEditingController();
   DateTime? _deadline;
-  String _status = 'Planning';
   List<User> _selectedMembers = [];
 
   bool _isLoading = false;
@@ -59,7 +58,6 @@ class _CreateProjectScreenState extends State<CreateProjectScreen> {
           'title': _titleController.text.trim(),
           'description': _descriptionController.text.trim(),
           'deadline': _deadline?.toIso8601String(),
-          'status': _status,
           'members': _selectedMembers.map((member) => member.id).toList(),
         };
 
@@ -162,57 +160,6 @@ class _CreateProjectScreenState extends State<CreateProjectScreen> {
                             ),
                           ),
                         ],
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              const SizedBox(height: 16),
-              Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Status',
-                        style: Theme.of(context).textTheme.titleMedium,
-                      ),
-                      const SizedBox(height: 8),
-                      DropdownButtonFormField<String>(
-                        value: _status,
-                        decoration: const InputDecoration(
-                          border: OutlineInputBorder(),
-                        ),
-                        items: const [
-                          DropdownMenuItem(
-                            value: 'Planning',
-                            child: Text('Planning'),
-                          ),
-                          DropdownMenuItem(
-                            value: 'In Progress',
-                            child: Text('In Progress'),
-                          ),
-                          DropdownMenuItem(
-                            value: 'On Hold',
-                            child: Text('On Hold'),
-                          ),
-                          DropdownMenuItem(
-                            value: 'Completed',
-                            child: Text('Completed'),
-                          ),
-                          DropdownMenuItem(
-                            value: 'Cancelled',
-                            child: Text('Cancelled'),
-                          ),
-                        ],
-                        onChanged: (value) {
-                          if (value != null) {
-                            setState(() {
-                              _status = value;
-                            });
-                          }
-                        },
                       ),
                     ],
                   ),

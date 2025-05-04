@@ -376,33 +376,32 @@ class _HomeContentState extends State<HomeContent> {
     _loadData();
   }
 
-  void _loadData() {
+  Future<void> _loadData() async {
     final authProvider = Provider.of<AuthProvider>(context, listen: false);
     if (authProvider.token != null) {
       setState(() {
         _isLoading = true;
       });
 
-      _projectsFuture = _projectService.getAllProjects(authProvider.token);
-      // Use the method to get today's tasks
-      _tasksFuture = _taskService.getTodayTasks(authProvider.token!);
+      try {
+        _projectsFuture = _projectService.getAllProjects(authProvider.token);
+        _tasksFuture = _taskService.getTodayTasks(authProvider.token!);
 
-      // Set loading to false when both futures complete
-      Future.wait([_projectsFuture, _tasksFuture])
-          .then((_) {
-            if (mounted) {
-              setState(() {
-                _isLoading = false;
-              });
-            }
-          })
-          .catchError((error) {
-            if (mounted) {
-              setState(() {
-                _isLoading = false;
-              });
-            }
+        // Wait for both futures to complete
+        await Future.wait([_projectsFuture, _tasksFuture]);
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(SnackBar(content: Text('Error loading data: $e')));
+        }
+      } finally {
+        if (mounted) {
+          setState(() {
+            _isLoading = false;
           });
+        }
+      }
     }
   }
 
@@ -410,9 +409,9 @@ class _HomeContentState extends State<HomeContent> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
+        automaticallyImplyLeading: false,
         title: const Text('Task Management', style: TextStyle(fontSize: 18)),
         centerTitle: true,
-
         actions: [
           IconButton(
             icon: const Icon(Icons.notifications_outlined),
@@ -428,10 +427,9 @@ class _HomeContentState extends State<HomeContent> {
           _isLoading
               ? const Center(child: CircularProgressIndicator())
               : RefreshIndicator(
-                onRefresh: () async {
-                  _loadData();
-                },
+                onRefresh: _loadData,
                 child: SingleChildScrollView(
+                  physics: const AlwaysScrollableScrollPhysics(),
                   padding: const EdgeInsets.all(16),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,

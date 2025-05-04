@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
-import 'package:url_launcher/url_launcher.dart';
-import 'package:pdf_viewer_plugin/pdf_viewer_plugin.dart';
+import 'package:flutter_pdfview/flutter_pdfview.dart';
 import 'package:video_player/video_player.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'dart:io';
+import 'package:path_provider/path_provider.dart';
+import 'package:http/http.dart' as http;
 
 class AttachmentPreviewScreen extends StatefulWidget {
   final String attachmentUrl;
@@ -25,32 +27,62 @@ class AttachmentPreviewScreen extends StatefulWidget {
 
 class _AttachmentPreviewScreenState extends State<AttachmentPreviewScreen> {
   VideoPlayerController? _videoController;
-  bool _isVideoInitialized = false;
+  bool _isLoading = true;
+  String? _error;
+  String? _localPath;
 
   @override
   void initState() {
     super.initState();
-    if (widget.fileType.startsWith('video/')) {
-      _initializeVideo();
+    _initializePreview();
+  }
+
+  Future<void> _initializePreview() async {
+    try {
+      if (widget.fileType.toLowerCase().contains('pdf')) {
+        await _downloadAndSavePdf();
+      } else if (widget.fileType.toLowerCase().contains('video')) {
+        await _initializeVideo();
+      }
+    } catch (e) {
+      setState(() {
+        _error = e.toString();
+      });
+    } finally {
+      setState(() {
+        _isLoading = false;
+      });
     }
   }
 
-  void _initializeVideo() async {
+  Future<void> _downloadAndSavePdf() async {
     try {
-      String url = widget.attachmentUrl;
-      if (url.startsWith('/') || url.contains(':\\')) {
-        url = 'file://$url';
-      }
+      final response = await http.get(Uri.parse(widget.attachmentUrl));
+      final bytes = response.bodyBytes;
 
-      _videoController = VideoPlayerController.network(url);
-      await _videoController!.initialize();
-      if (mounted) {
-        setState(() {
-          _isVideoInitialized = true;
-        });
-      }
+      final tempDir = await getTemporaryDirectory();
+      final file = File('${tempDir.path}/${widget.fileName}');
+      await file.writeAsBytes(bytes);
+
+      setState(() {
+        _localPath = file.path;
+      });
     } catch (e) {
-      debugPrint('Error initializing video: $e');
+      setState(() {
+        _error = 'Error downloading PDF: $e';
+      });
+    }
+  }
+
+  Future<void> _initializeVideo() async {
+    try {
+      _videoController = VideoPlayerController.network(widget.attachmentUrl);
+      await _videoController!.initialize();
+      await _videoController!.setLooping(true);
+    } catch (e) {
+      setState(() {
+        _error = 'Error initializing video: $e';
+      });
     }
   }
 
@@ -66,202 +98,147 @@ class _AttachmentPreviewScreenState extends State<AttachmentPreviewScreen> {
       appBar: AppBar(
         title: Text(widget.fileName),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.download),
-            onPressed: () async {
-              try {
-                String url = widget.attachmentUrl;
-                if (url.startsWith('/') || url.contains(':\\')) {
-                  url = 'file://$url';
-                }
-
-                final uri = Uri.parse(url);
-                if (!await launchUrl(uri)) {
-                  if (context.mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Could not open the file')),
-                    );
-                  }
-                }
-              } catch (e) {
-                if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('Error: ${e.toString()}')),
-                  );
-                }
-              }
-            },
-          ),
           if (widget.onDelete != null)
             IconButton(
-              icon: const Icon(Icons.delete, color: Colors.red),
-              onPressed: () async {
-                final confirmed = await showDialog<bool>(
+              icon: const Icon(Icons.delete),
+              onPressed: () {
+                showDialog(
                   context: context,
                   builder:
                       (context) => AlertDialog(
                         title: const Text('Delete Attachment'),
-                        content: Text(
-                          'Are you sure you want to delete "${widget.fileName}"?',
+                        content: const Text(
+                          'Are you sure you want to delete this attachment?',
                         ),
                         actions: [
                           TextButton(
-                            onPressed: () => Navigator.of(context).pop(false),
+                            onPressed: () => Navigator.pop(context),
                             child: const Text('Cancel'),
                           ),
                           TextButton(
-                            onPressed: () => Navigator.of(context).pop(true),
-                            style: TextButton.styleFrom(
-                              foregroundColor: Colors.red,
-                            ),
+                            onPressed: () {
+                              Navigator.pop(context);
+                              widget.onDelete?.call();
+                              Navigator.pop(context);
+                            },
                             child: const Text('Delete'),
                           ),
                         ],
                       ),
                 );
-
-                if (confirmed == true && context.mounted) {
-                  widget.onDelete!();
-                  Navigator.of(context).pop();
-                }
               },
             ),
         ],
       ),
-      body: Center(child: _buildPreview()),
+      body:
+          _isLoading
+              ? const Center(child: CircularProgressIndicator())
+              : _error != null
+              ? Center(
+                child: Text(_error!, style: const TextStyle(color: Colors.red)),
+              )
+              : _buildPreview(),
     );
   }
 
   Widget _buildPreview() {
-    if (widget.fileType.startsWith('image/')) {
-      if (widget.attachmentUrl.startsWith('/') ||
-          widget.attachmentUrl.contains(':\\')) {
-        // Handle local file
-        return InteractiveViewer(
-          child: Image.file(
-            File(widget.attachmentUrl),
-            fit: BoxFit.contain,
-            errorBuilder: (context, error, stackTrace) {
-              debugPrint('Error loading local image: $error');
-              return const Center(child: Text('Failed to load image'));
-            },
-          ),
-        );
-      } else {
-        // Handle network image
-        return InteractiveViewer(
-          child: Image.network(
-            widget.attachmentUrl,
-            fit: BoxFit.contain,
-            errorBuilder: (context, error, stackTrace) {
-              debugPrint('Error loading network image: $error');
-              return const Center(child: Text('Failed to load image'));
-            },
-          ),
-        );
+    if (widget.fileType.toLowerCase().contains('pdf')) {
+      if (_localPath == null) {
+        return const Center(child: Text('Error loading PDF'));
       }
-    } else if (widget.fileType == 'application/pdf') {
-      return PdfView(path: widget.attachmentUrl);
-    } else if (widget.fileType.startsWith('video/')) {
-      if (!_isVideoInitialized) {
-        return const Center(child: CircularProgressIndicator());
+      return PDFView(
+        filePath: _localPath!,
+        enableSwipe: true,
+        swipeHorizontal: false,
+        autoSpacing: true,
+        pageFling: true,
+        onError: (error) {
+          setState(() {
+            _error = 'Error loading PDF: $error';
+          });
+        },
+        onPageError: (page, error) {
+          setState(() {
+            _error = 'Error loading page $page: $error';
+          });
+        },
+      );
+    } else if (widget.fileType.toLowerCase().contains('video')) {
+      if (_videoController == null || !_videoController!.value.isInitialized) {
+        return const Center(child: Text('Error loading video'));
       }
-      return Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          AspectRatio(
-            aspectRatio: _videoController!.value.aspectRatio,
-            child: VideoPlayer(_videoController!),
-          ),
-          const SizedBox(height: 16),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
+      return Center(
+        child: AspectRatio(
+          aspectRatio: _videoController!.value.aspectRatio,
+          child: Stack(
+            alignment: Alignment.center,
             children: [
+              VideoPlayer(_videoController!),
               IconButton(
                 icon: Icon(
                   _videoController!.value.isPlaying
                       ? Icons.pause
                       : Icons.play_arrow,
+                  size: 50,
+                  color: Colors.white,
                 ),
                 onPressed: () {
                   setState(() {
-                    if (_videoController!.value.isPlaying) {
-                      _videoController!.pause();
-                    } else {
-                      _videoController!.play();
-                    }
+                    _videoController!.value.isPlaying
+                        ? _videoController!.pause()
+                        : _videoController!.play();
                   });
                 },
               ),
             ],
           ),
-        ],
+        ),
+      );
+    } else if (widget.fileType.toLowerCase().contains('image')) {
+      return InteractiveViewer(
+        child: Image.network(
+          widget.attachmentUrl,
+          errorBuilder: (context, error, stackTrace) {
+            return Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(Icons.broken_image, size: 48, color: Colors.grey),
+                  const SizedBox(height: 16),
+                  Text('Error loading image: $error'),
+                ],
+              ),
+            );
+          },
+        ),
       );
     } else {
-      return Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(_getFileIcon(), size: 64),
-          const SizedBox(height: 16),
-          Text(widget.fileName, style: const TextStyle(fontSize: 16)),
-          const SizedBox(height: 8),
-          Text(
-            'File type: ${widget.fileType}',
-            style: const TextStyle(color: Colors.grey),
-          ),
-          const SizedBox(height: 16),
-          ElevatedButton.icon(
-            onPressed: () async {
-              try {
-                String url = widget.attachmentUrl;
-                if (url.startsWith('/') || url.contains(':\\')) {
-                  url = 'file://$url';
-                }
-
-                final uri = Uri.parse(url);
-                if (!await launchUrl(uri)) {
-                  if (context.mounted) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.insert_drive_file, size: 48, color: Colors.grey),
+            const SizedBox(height: 16),
+            Text(widget.fileName),
+            const SizedBox(height: 24),
+            ElevatedButton(
+              onPressed: () async {
+                final url = Uri.parse(widget.attachmentUrl);
+                if (await canLaunchUrl(url)) {
+                  await launchUrl(url);
+                } else {
+                  if (mounted) {
                     ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Could not open the file')),
+                      const SnackBar(content: Text('Could not open file')),
                     );
                   }
                 }
-              } catch (e) {
-                if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('Error: ${e.toString()}')),
-                  );
-                }
-              }
-            },
-            icon: const Icon(Icons.download),
-            label: const Text('Download File'),
-          ),
-        ],
+              },
+              child: const Text('Open File'),
+            ),
+          ],
+        ),
       );
-    }
-  }
-
-  IconData _getFileIcon() {
-    if (widget.fileType.startsWith('audio/')) {
-      return Icons.audio_file;
-    } else if (widget.fileType == 'application/msword' ||
-        widget.fileType ==
-            'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
-      return Icons.description;
-    } else if (widget.fileType == 'application/vnd.ms-excel' ||
-        widget.fileType ==
-            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet') {
-      return Icons.table_chart;
-    } else if (widget.fileType == 'application/vnd.ms-powerpoint' ||
-        widget.fileType ==
-            'application/vnd.openxmlformats-officedocument.presentationml.presentation') {
-      return Icons.slideshow;
-    } else if (widget.fileType == 'application/zip' ||
-        widget.fileType == 'application/x-zip-compressed') {
-      return Icons.archive;
-    } else {
-      return Icons.insert_drive_file;
     }
   }
 }

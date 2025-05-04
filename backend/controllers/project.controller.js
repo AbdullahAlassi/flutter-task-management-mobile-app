@@ -17,30 +17,12 @@ exports.getAllProjects = async (req, res) => {
       .populate("members", "name email profilePicture")
       .sort({ createdAt: -1 })
 
-    // Calculate progress for each project
+    // Calculate progress and update status for each project
     const projectsWithProgress = await Promise.all(
       projects.map(async (project) => {
         const projectObj = project.toObject()
-
-        // Find all boards in this project
-        const boards = await Board.find({ project: project._id })
-        const boardIds = boards.map((board) => board._id)
-
-        // Get total tasks count
-        const totalTasks = await Task.countDocuments({ board: { $in: boardIds } })
-
-        // Get completed tasks count
-        const completedTasks = await Task.countDocuments({
-          board: { $in: boardIds },
-          status: "Done",
-        })
-
-        projectObj.progress = {
-          totalTasks,
-          completedTasks,
-          progressPercentage: totalTasks > 0 ? (completedTasks / totalTasks) * 100 : 0,
-        }
-
+        const progress = await project.calculateProgress()
+        projectObj.progress = progress
         return projectObj
       }),
     )
@@ -78,27 +60,10 @@ exports.getProjectById = async (req, res) => {
       })
     }
 
-    // Calculate project progress
+    // Calculate progress and update status
     const projectObj = project.toObject()
-
-    // Find all boards in this project
-    const boards = await Board.find({ project: project._id })
-    const boardIds = boards.map((board) => board._id)
-
-    // Get total tasks count
-    const totalTasks = await Task.countDocuments({ board: { $in: boardIds } })
-
-    // Get completed tasks count
-    const completedTasks = await Task.countDocuments({
-      board: { $in: boardIds },
-      status: "Done",
-    })
-
-    projectObj.progress = {
-      totalTasks,
-      completedTasks,
-      progressPercentage: totalTasks > 0 ? (completedTasks / totalTasks) * 100 : 0,
-    }
+    const progress = await project.calculateProgress()
+    projectObj.progress = progress
 
     res.status(200).json({
       success: true,
@@ -119,7 +84,7 @@ exports.getProjectById = async (req, res) => {
 // Create a new project
 exports.createProject = async (req, res) => {
   try {
-    const { title, description, members, deadline, status } = req.body
+    const { title, description, members, deadline } = req.body
 
     // Create the project with the current user as manager
     const project = await Project.create({
@@ -128,7 +93,7 @@ exports.createProject = async (req, res) => {
       manager: req.user._id,
       members: members || [],
       deadline,
-      status: status || "Planning",
+      status: "Planning", // Default status for new projects
     })
 
     // Add the manager to members if not already included
@@ -141,6 +106,11 @@ exports.createProject = async (req, res) => {
     const populatedProject = await Project.findById(project._id)
       .populate("manager", "name email profilePicture")
       .populate("members", "name email profilePicture")
+
+    // Calculate initial progress
+    const projectObj = populatedProject.toObject()
+    const progress = await populatedProject.calculateProgress()
+    projectObj.progress = progress
 
     // Create notifications for members
     if (members && members.length > 0) {
@@ -163,7 +133,7 @@ exports.createProject = async (req, res) => {
     res.status(201).json({
       success: true,
       data: {
-        project: populatedProject,
+        project: projectObj,
       },
     })
   } catch (error) {
@@ -181,6 +151,9 @@ exports.updateProject = async (req, res) => {
   try {
     const { projectId } = req.params
     const updates = req.body
+
+    // Remove status from updates as it's now managed automatically
+    delete updates.status
 
     // Find the project
     const project = await Project.findById(projectId)
@@ -212,6 +185,11 @@ exports.updateProject = async (req, res) => {
       .populate("manager", "name email profilePicture")
       .populate("members", "name email profilePicture")
 
+    // Calculate progress and update status
+    const projectObj = updatedProject.toObject()
+    const progress = await updatedProject.calculateProgress()
+    projectObj.progress = progress
+
     // If members were updated, notify new members
     if (membersChanged && updates.members) {
       const newMembers = updates.members.filter((id) => !oldMembers.includes(id.toString()))
@@ -227,28 +205,6 @@ exports.updateProject = async (req, res) => {
           },
         })
       }
-    }
-
-    // Calculate project progress
-    const projectObj = updatedProject.toObject()
-
-    // Find all boards in this project
-    const boards = await Board.find({ project: updatedProject._id })
-    const boardIds = boards.map((board) => board._id)
-
-    // Get total tasks count
-    const totalTasks = await Task.countDocuments({ board: { $in: boardIds } })
-
-    // Get completed tasks count
-    const completedTasks = await Task.countDocuments({
-      board: { $in: boardIds },
-      status: "Done",
-    })
-
-    projectObj.progress = {
-      totalTasks,
-      completedTasks,
-      progressPercentage: totalTasks > 0 ? (completedTasks / totalTasks) * 100 : 0,
     }
 
     res.status(200).json({

@@ -28,7 +28,7 @@ const ProjectSchema = new Schema(
     },
     status: {
       type: String,
-      enum: ["Planning", "In Progress", "On Hold", "Completed", "Cancelled"],
+      enum: ["Planning", "In Progress", "Completed"],
       default: "Planning",
     },
     createdAt: {
@@ -45,7 +45,7 @@ const ProjectSchema = new Schema(
   },
 )
 
-// Add a method to calculate project progress
+// Add a method to calculate project progress and update status
 ProjectSchema.methods.calculateProgress = async function () {
   const Board = mongoose.model("Board")
   const Task = mongoose.model("Task")
@@ -63,10 +63,27 @@ ProjectSchema.methods.calculateProgress = async function () {
     status: "Done",
   })
 
+  // Calculate progress percentage
+  const progressPercentage = totalTasks > 0 ? (completedTasks / totalTasks) * 100 : 0
+
+  // Update project status based on progress
+  let newStatus = "Planning"
+  if (progressPercentage > 0 && progressPercentage < 100) {
+    newStatus = "In Progress"
+  } else if (progressPercentage === 100) {
+    newStatus = "Completed"
+  }
+
+  // Update the project status if it has changed
+  if (this.status !== newStatus) {
+    this.status = newStatus
+    await this.save()
+  }
+
   return {
     totalTasks,
     completedTasks,
-    progressPercentage: totalTasks > 0 ? (completedTasks / totalTasks) * 100 : 0,
+    progressPercentage,
   }
 }
 
