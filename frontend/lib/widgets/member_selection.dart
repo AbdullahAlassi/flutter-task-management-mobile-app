@@ -10,12 +10,14 @@ class MemberSelection extends StatefulWidget {
   final List<User> selectedMembers;
   final Function(List<User>) onMembersChanged;
   final bool includeCurrentUser;
+  final List<User>? availableMembers;
 
   const MemberSelection({
     super.key,
     required this.selectedMembers,
     required this.onMembersChanged,
     this.includeCurrentUser = true,
+    this.availableMembers,
   });
 
   @override
@@ -73,21 +75,28 @@ class _MemberSelectionState extends State<MemberSelection> {
         throw Exception('Authentication token is missing');
       }
 
-      final results = await _userService.searchUsersByEmail(
-        authProvider.token!,
-        email,
-      );
+      List<User> results;
+
+      // If we have available members, filter from them
+      if (widget.availableMembers != null) {
+        results = widget.availableMembers!
+            .where((user) =>
+                user.email.toLowerCase().contains(email.toLowerCase()) ||
+                user.name.toLowerCase().contains(email.toLowerCase()))
+            .toList();
+      } else {
+        // Otherwise, search all users (existing behavior)
+        results = await _userService.searchUsersByEmail(
+          authProvider.token!,
+          email,
+        );
+      }
 
       // Filter out users that are already selected
-      final filteredResults =
-          results
-              .where(
-                (user) =>
-                    !widget.selectedMembers.any(
-                      (member) => member.id == user.id,
-                    ),
-              )
-              .toList();
+      final filteredResults = results
+          .where((user) =>
+              !widget.selectedMembers.any((member) => member.id == user.id))
+          .toList();
 
       setState(() {
         _searchResults = filteredResults;
@@ -135,10 +144,9 @@ class _MemberSelectionState extends State<MemberSelection> {
           Wrap(
             spacing: 8,
             runSpacing: 8,
-            children:
-                widget.selectedMembers
-                    .map((user) => _buildMemberChip(user))
-                    .toList(),
+            children: widget.selectedMembers
+                .map((user) => _buildMemberChip(user))
+                .toList(),
           ),
           const SizedBox(height: 16),
         ],
@@ -171,40 +179,41 @@ class _MemberSelectionState extends State<MemberSelection> {
           _isLoading
               ? const Center(child: CircularProgressIndicator())
               : _error != null
-              ? Text(
-                'Error: $_error',
-                style: TextStyle(color: Theme.of(context).colorScheme.error),
-              )
-              : _searchResults.isEmpty
-              ? const Padding(
-                padding: EdgeInsets.all(8.0),
-                child: Text('No users found with that email'),
-              )
-              : Container(
-                decoration: BoxDecoration(
-                  border: Border.all(color: Colors.grey.shade300),
-                  borderRadius: BorderRadius.circular(4),
-                ),
-                child: ListView.builder(
-                  shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
-                  itemCount: _searchResults.length,
-                  itemBuilder: (context, index) {
-                    final user = _searchResults[index];
-                    return ListTile(
-                      leading: UserAvatar(user: user),
-                      title: Text(user.name),
-                      subtitle: Text(user.email),
-                      trailing: IconButton(
-                        icon: const Icon(Icons.add_circle_outline),
-                        color: AppColors.primary,
-                        onPressed: () => _addMember(user),
-                      ),
-                      onTap: () => _addMember(user),
-                    );
-                  },
-                ),
-              ),
+                  ? Text(
+                      'Error: $_error',
+                      style:
+                          TextStyle(color: Theme.of(context).colorScheme.error),
+                    )
+                  : _searchResults.isEmpty
+                      ? const Padding(
+                          padding: EdgeInsets.all(8.0),
+                          child: Text('No users found with that email'),
+                        )
+                      : Container(
+                          decoration: BoxDecoration(
+                            border: Border.all(color: Colors.grey.shade300),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: ListView.builder(
+                            shrinkWrap: true,
+                            physics: const NeverScrollableScrollPhysics(),
+                            itemCount: _searchResults.length,
+                            itemBuilder: (context, index) {
+                              final user = _searchResults[index];
+                              return ListTile(
+                                leading: UserAvatar(user: user),
+                                title: Text(user.name),
+                                subtitle: Text(user.email),
+                                trailing: IconButton(
+                                  icon: const Icon(Icons.add_circle_outline),
+                                  color: AppColors.primary,
+                                  onPressed: () => _addMember(user),
+                                ),
+                                onTap: () => _addMember(user),
+                              );
+                            },
+                          ),
+                        ),
         ],
 
         if (_error != null && !_isSearching)

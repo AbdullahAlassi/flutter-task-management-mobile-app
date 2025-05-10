@@ -29,10 +29,9 @@ class NotificationItem extends StatelessWidget {
       onDismissed: (_) => onDismiss(),
       child: Card(
         margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
-        color:
-            notification.isRead
-                ? null
-                : Theme.of(context).colorScheme.primary.withOpacity(0.1),
+        color: notification.isRead
+            ? null
+            : Theme.of(context).colorScheme.primary.withOpacity(0.1),
         child: ListTile(
           onTap: onTap,
           contentPadding: const EdgeInsets.symmetric(
@@ -40,18 +39,20 @@ class NotificationItem extends StatelessWidget {
             vertical: 8,
           ),
           leading: CircleAvatar(
-            backgroundImage:
-                notification.senderProfilePicture != null
-                    ? NetworkImage(notification.senderProfilePicture!)
-                    : null,
-            child:
-                notification.senderProfilePicture == null
-                    ? Icon(
-                      _getIconForNotificationType(notification),
-                      color: Colors.white,
-                      size: 20,
-                    )
-                    : null,
+            backgroundImage: (notification.senderProfilePicture != null &&
+                    notification.senderProfilePicture!.isNotEmpty &&
+                    notification.senderProfilePicture!.startsWith('http'))
+                ? NetworkImage(notification.senderProfilePicture!)
+                : null,
+            child: (notification.senderProfilePicture == null ||
+                    notification.senderProfilePicture!.isEmpty ||
+                    !notification.senderProfilePicture!.startsWith('http'))
+                ? Icon(
+                    _getIconForNotificationType(notification),
+                    color: Colors.white,
+                    size: 20,
+                  )
+                : null,
           ),
           title: Text(
             notification.message,
@@ -64,17 +65,16 @@ class NotificationItem extends StatelessWidget {
             _formatTimeAgo(notification.createdAt),
             style: Theme.of(context).textTheme.bodySmall,
           ),
-          trailing:
-              notification.isRead
-                  ? null
-                  : Container(
-                    width: 12,
-                    height: 12,
-                    decoration: BoxDecoration(
-                      color: Theme.of(context).colorScheme.primary,
-                      shape: BoxShape.circle,
-                    ),
+          trailing: notification.isRead
+              ? null
+              : Container(
+                  width: 12,
+                  height: 12,
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).colorScheme.primary,
+                    shape: BoxShape.circle,
                   ),
+                ),
         ),
       ),
     );

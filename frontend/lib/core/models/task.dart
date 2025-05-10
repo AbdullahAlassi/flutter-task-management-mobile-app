@@ -20,10 +20,9 @@ class Attachment {
       name: json['name'] ?? '',
       type: json['type'] ?? '',
       url: json['url'] ?? '',
-      uploadedAt:
-          json['uploadedAt'] != null
-              ? DateTime.parse(json['uploadedAt'])
-              : DateTime.now(),
+      uploadedAt: json['uploadedAt'] != null
+          ? DateTime.parse(json['uploadedAt'])
+          : DateTime.now(),
     );
   }
 
@@ -51,6 +50,8 @@ class Task {
   final List<Subtask> subtasks;
   final DateTime createdAt;
   final DateTime updatedAt;
+  final String color;
+  final User leader;
 
   Task({
     required this.id,
@@ -66,6 +67,8 @@ class Task {
     this.subtasks = const [],
     required this.createdAt,
     required this.updatedAt,
+    this.color = '#2196F3',
+    required this.leader,
   });
 
   factory Task.fromJson(Map<String, dynamic> json) {
@@ -81,22 +84,21 @@ class Task {
     List<User> assigneesList = [];
     if (json['assignees'] != null) {
       try {
-        assigneesList =
-            (json['assignees'] as List<dynamic>).map((assignee) {
-              if (assignee is Map<String, dynamic>) {
-                return User.fromJson(assignee);
-              } else {
-                // If it's just an ID, create a minimal user
-                return User(
-                  id: assignee.toString(),
-                  name: 'Unknown',
-                  email: '',
-                  role: 'Team Member',
-                  createdAt: DateTime.now(),
-                  updatedAt: DateTime.now(),
-                );
-              }
-            }).toList();
+        assigneesList = (json['assignees'] as List<dynamic>).map((assignee) {
+          if (assignee is Map<String, dynamic>) {
+            return User.fromJson(assignee);
+          } else {
+            // If it's just an ID, create a minimal user
+            return User(
+              id: assignee.toString(),
+              name: 'Unknown',
+              email: '',
+              role: 'Team Member',
+              createdAt: DateTime.now(),
+              updatedAt: DateTime.now(),
+            );
+          }
+        }).toList();
       } catch (e) {
         debugPrint('Error parsing assignees: $e');
       }
@@ -114,10 +116,9 @@ class Task {
 
     DateTime createdAtDate;
     try {
-      createdAtDate =
-          json['createdAt'] != null
-              ? DateTime.parse(json['createdAt'])
-              : DateTime.now();
+      createdAtDate = json['createdAt'] != null
+          ? DateTime.parse(json['createdAt'])
+          : DateTime.now();
     } catch (e) {
       debugPrint('Error parsing createdAt: $e');
       createdAtDate = DateTime.now();
@@ -125,10 +126,9 @@ class Task {
 
     DateTime updatedAtDate;
     try {
-      updatedAtDate =
-          json['updatedAt'] != null
-              ? DateTime.parse(json['updatedAt'])
-              : DateTime.now();
+      updatedAtDate = json['updatedAt'] != null
+          ? DateTime.parse(json['updatedAt'])
+          : DateTime.now();
     } catch (e) {
       debugPrint('Error parsing updatedAt: $e');
       updatedAtDate = DateTime.now();
@@ -138,10 +138,9 @@ class Task {
     List<Attachment> attachmentsList = [];
     if (json['attachments'] != null) {
       try {
-        attachmentsList =
-            (json['attachments'] as List<dynamic>)
-                .map((attachment) => Attachment.fromJson(attachment))
-                .toList();
+        attachmentsList = (json['attachments'] as List<dynamic>)
+            .map((attachment) => Attachment.fromJson(attachment))
+            .toList();
       } catch (e) {
         debugPrint('Error parsing attachments: $e');
       }
@@ -151,13 +150,34 @@ class Task {
     List<Subtask> subtasksList = [];
     if (json['subtasks'] != null) {
       try {
-        subtasksList =
-            (json['subtasks'] as List<dynamic>)
-                .map((subtask) => Subtask.fromJson(subtask))
-                .toList();
+        subtasksList = (json['subtasks'] as List<dynamic>)
+            .map((subtask) => Subtask.fromJson(subtask))
+            .toList();
       } catch (e) {
         debugPrint('Error parsing subtasks: $e');
       }
+    }
+
+    // Handle color
+    String colorValue = json['color']?.toString() ?? '#2196F3';
+    if (!colorValue.startsWith('#')) {
+      colorValue = '#$colorValue';
+    }
+
+    // Handle leader
+    debugPrint('Parsing leader from JSON: [33m${json['leader']}[0m');
+    User leaderUser;
+    try {
+      leaderUser = User.fromJson(json['leader'] ?? {});
+    } catch (e) {
+      leaderUser = User(
+        id: '',
+        name: 'Unknown',
+        email: '',
+        role: 'Team Member',
+        createdAt: DateTime.now(),
+        updatedAt: DateTime.now(),
+      );
     }
 
     return Task(
@@ -174,6 +194,8 @@ class Task {
       subtasks: subtasksList,
       createdAt: createdAtDate,
       updatedAt: updatedAtDate,
+      color: colorValue,
+      leader: leaderUser,
     );
   }
 
@@ -189,6 +211,8 @@ class Task {
       'attachments':
           attachments.map((attachment) => attachment.toJson()).toList(),
       'subtasks': subtasks.map((subtask) => subtask.toJson()).toList(),
+      'color': color,
+      'leader': leader.id,
     };
   }
 
@@ -203,6 +227,8 @@ class Task {
     int? order,
     List<Attachment>? attachments,
     List<Subtask>? subtasks,
+    String? color,
+    User? leader,
   }) {
     return Task(
       id: id,
@@ -218,6 +244,8 @@ class Task {
       subtasks: subtasks ?? this.subtasks,
       createdAt: createdAt,
       updatedAt: updatedAt,
+      color: color ?? this.color,
+      leader: leader ?? this.leader,
     );
   }
 }

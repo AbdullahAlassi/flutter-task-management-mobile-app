@@ -93,12 +93,12 @@ const taskValidation = {
 const subtaskValidation = {
   create: Joi.object({
     title: Joi.string().required().min(3).max(100),
-    deadline: Joi.date().optional(),
+    deadline: Joi.date().iso().allow(null),
     assignees: Joi.array().items(Joi.string().hex().length(24)).optional()
   }),
   update: Joi.object({
     title: Joi.string().min(3).max(100),
-    deadline: Joi.date(),
+    deadline: Joi.date().iso().allow(null),
     isCompleted: Joi.boolean(),
     order: Joi.number(),
     assignees: Joi.array().items(Joi.string().hex().length(24))

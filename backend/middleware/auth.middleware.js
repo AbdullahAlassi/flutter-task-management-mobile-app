@@ -1,8 +1,12 @@
 const jwt = require("jsonwebtoken")
 const User = require("../models/user.model")
+const Project = require("../models/project.model")
+const { standardizeRole } = require("../utils/permissions")
+const logger = require("../utils/logger")
 
 // Protect routes - Authentication middleware
 exports.protect = async (req, res, next) => {
+  logger.debug('Auth Middleware: Incoming headers:', req.headers)
   try {
     let token
 
@@ -26,9 +30,8 @@ exports.protect = async (req, res, next) => {
       // Get user from token
       req.user = await User.findById(decoded.id).select("-password")
 
-      // Add user ID and role to request for easier access
+      // Add user ID to request for easier access
       req.userId = req.user._id
-      req.userRole = req.user.role
 
       if (!req.user) {
         return res.status(401).json({
@@ -36,6 +39,8 @@ exports.protect = async (req, res, next) => {
           message: "User not found",
         })
       }
+
+      logger.debug('Auth Middleware: Decoded user:', req.user)
 
       next()
     } catch (error) {
@@ -45,7 +50,7 @@ exports.protect = async (req, res, next) => {
       })
     }
   } catch (error) {
-    console.error("Auth middleware error:", error)
+    logger.error("Auth middleware error:", error)
     res.status(500).json({
       success: false,
       message: "Server error",
@@ -78,9 +83,8 @@ exports.verifyToken = async (req, res, next) => {
       // Get user from token
       req.user = await User.findById(decoded.id).select("-password")
 
-      // Add user ID and role to request for easier access
+      // Add user ID to request for easier access
       req.userId = req.user._id
-      req.userRole = req.user.role
 
       if (!req.user) {
         return res.status(401).json({
@@ -97,7 +101,7 @@ exports.verifyToken = async (req, res, next) => {
       })
     }
   } catch (error) {
-    console.error("Auth middleware error:", error)
+    logger.error("Auth middleware error:", error)
     res.status(500).json({
       success: false,
       message: "Server error",
@@ -121,7 +125,7 @@ exports.verifyProjectManager = async (req, res, next) => {
     // since they're creating a new project and will become the manager
     next()
   } catch (error) {
-    console.error("Auth middleware error:", error)
+    logger.error("Auth middleware error:", error)
     res.status(500).json({
       success: false,
       message: "Server error",
@@ -129,8 +133,8 @@ exports.verifyProjectManager = async (req, res, next) => {
   }
 }
 
-// Add the verifyAdmin function that's mentioned in the error logs
-exports.verifyAdmin = async (req, res, next) => {
+// Add the verifyProjectAdmin function that's mentioned in the error logs
+exports.verifyProjectAdmin = async (req, res, next) => {
   try {
     // This middleware should be used after verifyToken
     // so req.user should be available
@@ -141,17 +145,33 @@ exports.verifyAdmin = async (req, res, next) => {
       })
     }
 
-    // Check if the user is an admin
-    if (req.user.role !== "admin") {
+    // Get project from request
+    const project = req.project
+    if (!project) {
+      return res.status(404).json({
+        success: false,
+        message: "Project not found",
+      })
+    }
+
+    // Check if user is project owner or admin
+    const member = project.members.find(m => m.userId._id.toString() === req.userId.toString())
+    const role = standardizeRole(member?.role)
+
+    logger.debug(`Project admin check - User: ${req.userId}, Role: ${role}`)
+
+    if (!member || (role !== 'owner' && role !== 'admin')) {
       return res.status(403).json({
         success: false,
         message: "Not authorized to access this route",
       })
     }
 
+    // Set the user's role in the request for use in controllers
+    req.userRole = role
     next()
   } catch (error) {
-    console.error("Auth middleware error:", error)
+    logger.error("Auth middleware error:", error)
     res.status(500).json({
       success: false,
       message: "Server error",

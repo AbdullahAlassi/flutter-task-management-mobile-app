@@ -109,7 +109,11 @@ class _BoardDetailScreenState extends State<BoardDetailScreen> {
         onPressed: () async {
           final result = await Navigator.of(context).push(
             MaterialPageRoute(
-              builder: (_) => CreateTaskScreen(boardId: widget.board.id),
+              builder: (_) => CreateTaskScreen(
+                boardId: widget.board.id,
+                projectMembers: const [], // TODO: Replace with actual project members
+                projectId: widget.board.projectId,
+              ),
             ),
           );
           if (result == true) {

@@ -6,6 +6,7 @@ import 'package:frontend/widgets/custom_button.dart';
 import 'package:frontend/widgets/custom_text_field.dart';
 import 'package:frontend/widgets/member_selection.dart';
 import 'package:provider/provider.dart';
+import 'package:flutter_colorpicker/flutter_colorpicker.dart';
 
 class CreateProjectScreen extends StatefulWidget {
   const CreateProjectScreen({super.key});
@@ -20,6 +21,7 @@ class _CreateProjectScreenState extends State<CreateProjectScreen> {
   final _descriptionController = TextEditingController();
   DateTime? _deadline;
   List<User> _selectedMembers = [];
+  Color _selectedColor = const Color(0xFF2196F3); // Default blue color
 
   bool _isLoading = false;
   String? _error;
@@ -52,26 +54,28 @@ class _CreateProjectScreenState extends State<CreateProjectScreen> {
 
       try {
         final authProvider = Provider.of<AuthProvider>(context, listen: false);
-        final token = authProvider.token!;
+        final currentUserId = authProvider.user?.id;
 
         final projectData = {
           'title': _titleController.text.trim(),
           'description': _descriptionController.text.trim(),
           'deadline': _deadline?.toIso8601String(),
-          'members': _selectedMembers.map((member) => member.id).toList(),
+          'members': _selectedMembers
+              .where((member) => member.id != currentUserId) // Exclude manager
+              .map((member) => {
+                    'userId': member.id,
+                    'role': 'viewer',
+                  })
+              .toList(),
+          'color': '#${_selectedColor.value.toRadixString(16).substring(2)}',
         };
 
-        // Debug print
-        print('Creating project with data: $projectData');
-        print('Using token: $token');
-
-        await _projectService.createProject(token, projectData);
+        await _projectService.createProject(authProvider.token!, projectData);
 
         if (mounted) {
           Navigator.of(context).pop(true);
         }
       } catch (e) {
-        print('Error creating project: $e');
         setState(() {
           _error = e.toString();
         });
@@ -81,6 +85,57 @@ class _CreateProjectScreenState extends State<CreateProjectScreen> {
         });
       }
     }
+  }
+
+  void _showColorPicker() {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('Pick a color'),
+          content: SingleChildScrollView(
+            child: BlockPicker(
+              pickerColor: _selectedColor,
+              onColorChanged: (Color color) {
+                setState(() {
+                  _selectedColor = color;
+                });
+              },
+              availableColors: [
+                Colors.red,
+                Colors.pink,
+                Colors.purple,
+                Colors.deepPurple,
+                Colors.indigo,
+                Colors.blue,
+                Colors.lightBlue,
+                Colors.cyan,
+                Colors.teal,
+                Colors.green,
+                Colors.lightGreen,
+                Colors.lime,
+                Colors.yellow,
+                Colors.amber,
+                Colors.orange,
+                Colors.deepOrange,
+                Colors.brown,
+                Colors.grey,
+                Colors.blueGrey,
+                Colors.black,
+              ],
+            ),
+          ),
+          actions: <Widget>[
+            TextButton(
+              child: const Text('Done'),
+              onPressed: () {
+                Navigator.of(context).pop();
+              },
+            ),
+          ],
+        );
+      },
+    );
   }
 
   Future<void> _selectDate(BuildContext context) async {
@@ -130,6 +185,41 @@ class _CreateProjectScreenState extends State<CreateProjectScreen> {
                 hintText: 'Enter project description (optional)',
                 prefixIcon: Icons.description,
                 maxLines: 3,
+              ),
+              const SizedBox(height: 16),
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Project Color',
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          Container(
+                            width: 50,
+                            height: 50,
+                            decoration: BoxDecoration(
+                              color: _selectedColor,
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: Colors.grey),
+                            ),
+                          ),
+                          const SizedBox(width: 16),
+                          ElevatedButton.icon(
+                            onPressed: _showColorPicker,
+                            icon: const Icon(Icons.color_lens),
+                            label: const Text('Choose Color'),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
               ),
               const SizedBox(height: 16),
               Card(

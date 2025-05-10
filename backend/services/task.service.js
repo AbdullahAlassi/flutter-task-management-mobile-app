@@ -16,6 +16,7 @@ class TaskService {
       const tasks = await Task.find({ assignees: userId })
         .populate("assignees", "name email profilePicture")
         .populate("board", "title project")
+        .populate("leader", "name email profilePicture")
         .sort({ createdAt: -1 })
 
       return tasks
@@ -32,20 +33,50 @@ class TaskService {
    */
   async getTasksByBoard(boardId) {
     try {
+      logger.info(`Getting tasks for board: ${boardId}`)
+
       // Check if board exists
       const board = await Board.findById(boardId)
       if (!board) {
+        logger.warn(`Board not found: ${boardId}`)
         throw new Error("Board not found")
       }
 
-      // Find all tasks for the board
+      // Find all tasks for the board with proper population
       const tasks = await Task.find({ board: boardId })
-        .populate("assignees", "name email profilePicture")
+        .populate({
+          path: "assignees",
+          select: "name email profilePicture",
+          model: "User"
+        })
+        .populate({
+          path: "subtasks",
+          model: "Subtask"
+        })
+        .populate({
+          path: "leader",
+          select: "name email profilePicture",
+          model: "User"
+        })
         .sort({ order: 1 })
+        .lean()
 
-      return tasks
+      // Validate tasks data
+      const validTasks = tasks.filter(task => {
+        if (!task.leader) {
+          logger.warn(`Task ${task._id} has no leader`)
+          return false
+        }
+        return true
+      })
+
+      logger.info(`Found ${validTasks.length} valid tasks for board: ${boardId}`)
+      return validTasks
     } catch (error) {
-      logger.error(`Error getting tasks by board: ${error.message}`)
+      logger.error(`Error getting tasks by board: ${error.message}`, {
+        boardId,
+        error: error.stack
+      })
       throw error
     }
   }
@@ -60,6 +91,8 @@ class TaskService {
       const task = await Task.findById(taskId)
         .populate("assignees", "name email profilePicture")
         .populate("board", "title project")
+        .populate("subtasks")
+        .populate("leader", "name email profilePicture _id")
 
       if (!task) {
         throw new Error("Task not found")
@@ -80,20 +113,37 @@ class TaskService {
    */
   async createTask(taskData, userId) {
     try {
+      // Get the board to get its status
+      const board = await Board.findById(taskData.board)
+      if (!board) {
+        throw new Error("Board not found")
+      }
+
+      // Map board status to task status
+      const statusMap = {
+        todo: "To Do",
+        in_progress: "In Progress",
+        review: "In Review",
+        done: "Done"
+      }
+
       // Get the highest order value for tasks in this board
       const highestOrderTask = await Task.findOne({ board: taskData.board }).sort({ order: -1 })
 
       const newOrder = highestOrderTask ? highestOrderTask.order + 1 : 0
 
-      // Create task with the next order value
+      // Create task with the next order value and mapped status
       const task = await Task.create({
         ...taskData,
         order: newOrder,
         createdBy: userId,
+        status: statusMap[board.status] || "To Do", // Set status based on board status
+        leader: taskData.leader || userId // Ensure leader is set
       })
 
-      // Populate assignees
+      // Populate assignees and leader
       await task.populate("assignees", "name email profilePicture")
+      await task.populate("leader", "name email profilePicture")
 
       // Create activity log
       await ActivityLog.create({
@@ -123,24 +173,39 @@ class TaskService {
    */
   async updateTask(taskId, updateData, userId) {
     try {
+      logger.debug(`[updateTask] Starting update for task ${taskId} with data:`, updateData)
+      
       // Find task
       const task = await Task.findById(taskId)
       if (!task) {
+        logger.debug(`[updateTask] Task not found: ${taskId}`)
         throw new Error("Task not found")
       }
+
+      logger.debug(`[updateTask] Found task:`, task)
 
       // Update task fields
       Object.keys(updateData).forEach((key) => {
         if (key !== "board" && key !== "order") {
           // Don't allow changing board or order directly
+          logger.debug(`[updateTask] Updating field ${key} from ${task[key]} to ${updateData[key]}`)
           task[key] = updateData[key]
         }
       })
 
+      logger.debug(`[updateTask] Saving task with updated fields:`, task)
       await task.save()
+      logger.debug(`[updateTask] Task saved successfully`)
 
-      // Populate assignees
-      await task.populate("assignees", "name email profilePicture")
+      // Populate all necessary fields
+      const populatedTask = await Task.findById(taskId)
+        .populate("assignees", "name email profilePicture")
+        .populate("board", "title project")
+        .populate("subtasks")
+        .populate("leader", "name email profilePicture _id")
+        .lean()
+
+      logger.debug(`[updateTask] Task populated with all fields:`, populatedTask)
 
       // Create activity log
       await ActivityLog.create({
@@ -153,10 +218,11 @@ class TaskService {
         },
         board: task.board,
       })
+      logger.debug(`[updateTask] Activity log created`)
 
-      return task
+      return populatedTask
     } catch (error) {
-      logger.error(`Error updating task: ${error.message}`)
+      logger.error(`[updateTask] Error updating task: ${error.message}`, error)
       throw error
     }
   }
@@ -236,9 +302,18 @@ class TaskService {
 
       const newOrder = highestOrderTask ? highestOrderTask.order + 1 : 0
 
-      // Update task
+      // Map board status to task status
+      const statusMap = {
+        todo: "To Do",
+        in_progress: "In Progress",
+        review: "In Review",
+        done: "Done"
+      }
+
+      // Update task with new board, order, and status
       task.board = targetBoardId
       task.order = newOrder
+      task.status = statusMap[targetBoard.status] || "To Do" // Set status based on target board status
       await task.save()
 
       // Populate assignees

@@ -3,11 +3,12 @@ import 'package:frontend/core/models/user.dart';
 class Project {
   final String id;
   final String title;
-  final String? description;
-  final User manager;
-  final List<User> members;
+  final String description;
   final DateTime? deadline;
   final String status;
+  final String manager;
+  final List<User> members;
+  final String color;
   final DateTime createdAt;
   final DateTime updatedAt;
   final ProjectProgress? progress;
@@ -15,11 +16,12 @@ class Project {
   Project({
     required this.id,
     required this.title,
-    this.description,
-    required this.manager,
-    required this.members,
+    required this.description,
     this.deadline,
     required this.status,
+    required this.manager,
+    required this.members,
+    required this.color,
     required this.createdAt,
     required this.updatedAt,
     this.progress,
@@ -41,10 +43,9 @@ class Project {
 
     DateTime createdAtDate;
     try {
-      createdAtDate =
-          json['createdAt'] != null
-              ? DateTime.parse(json['createdAt'])
-              : DateTime.now();
+      createdAtDate = json['createdAt'] != null
+          ? DateTime.parse(json['createdAt'])
+          : DateTime.now();
     } catch (e) {
       // print('Error parsing createdAt: $e');
       createdAtDate = DateTime.now();
@@ -52,10 +53,9 @@ class Project {
 
     DateTime updatedAtDate;
     try {
-      updatedAtDate =
-          json['updatedAt'] != null
-              ? DateTime.parse(json['updatedAt'])
-              : DateTime.now();
+      updatedAtDate = json['updatedAt'] != null
+          ? DateTime.parse(json['updatedAt'])
+          : DateTime.now();
     } catch (e) {
       // print('Error parsing updatedAt: $e');
       updatedAtDate = DateTime.now();
@@ -81,12 +81,41 @@ class Project {
     List<User> membersList = [];
     if (json['members'] != null) {
       try {
-        membersList =
-            (json['members'] as List<dynamic>? ?? [])
-                .map((member) => User.fromJson(member))
-                .toList();
+        membersList = (json['members'] as List<dynamic>? ?? []).map((member) {
+          final user = member['userId'];
+          if (user != null && user is Map<String, dynamic>) {
+            return User(
+              id: user['_id'] ?? '',
+              name: user['name'] ?? '',
+              email: user['email'] ?? '',
+              role: member['role'] ?? '',
+              profilePicture: user['profilePicture'] ?? '',
+              createdAt: DateTime.now(),
+              updatedAt: DateTime.now(),
+            );
+          } else if (user != null && user is String) {
+            return User(
+              id: user,
+              name: '',
+              email: '',
+              role: member['role'] ?? '',
+              createdAt: DateTime.now(),
+              updatedAt: DateTime.now(),
+            );
+          } else {
+            return User(
+              id: member['userId'] ?? '',
+              name: '',
+              email: '',
+              role: member['role'] ?? '',
+              createdAt: DateTime.now(),
+              updatedAt: DateTime.now(),
+            );
+          }
+        }).toList();
       } catch (e) {
-        // print('Error parsing members: $e');
+        print('Error parsing members: $e');
+        print('Member data that caused error: $json');
       }
     }
 
@@ -100,17 +129,34 @@ class Project {
       }
     }
 
+    // Handle color with proper validation
+    String projectColor;
+    try {
+      projectColor = json['color']?.toString() ?? '#2196F3';
+      // Ensure the color is a valid hex color
+      if (!projectColor.startsWith('#')) {
+        projectColor = '#$projectColor';
+      }
+      // Validate hex color format
+      if (!RegExp(r'^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$')
+          .hasMatch(projectColor)) {
+        projectColor = '#2196F3'; // Default to blue if invalid
+      }
+    } catch (e) {
+      projectColor = '#2196F3'; // Default to blue if any error
+    }
+
     return Project(
-      id:
-          json['_id'] ??
+      id: json['_id'] ??
           json['id'] ??
           '', // Handle both _id and id, provide default
       title: json['title'] ?? '', // Provide default empty string
-      description: json['description'], // Already nullable
-      manager: managerUser,
-      members: membersList,
+      description: json['description'] ?? '', // Already nullable
       deadline: deadlineDate,
       status: json['status'] ?? 'Planning', // Provide default status
+      manager: managerUser.id,
+      members: membersList,
+      color: projectColor,
       createdAt: createdAtDate,
       updatedAt: updatedAtDate,
       progress: progressData,
@@ -119,10 +165,14 @@ class Project {
 
   Map<String, dynamic> toJson() {
     final Map<String, dynamic> data = {
+      '_id': id,
       'title': title,
       'description': description,
       'deadline': deadline?.toIso8601String(),
       'status': status,
+      'manager': manager,
+      'members': members.map((u) => u.toJson()).toList(),
+      'color': color,
     };
 
     if (progress != null) {
@@ -135,20 +185,22 @@ class Project {
   Project copyWith({
     String? title,
     String? description,
-    User? manager,
-    List<User>? members,
     DateTime? deadline,
     String? status,
+    String? manager,
+    List<User>? members,
+    String? color,
     ProjectProgress? progress,
   }) {
     return Project(
       id: id,
       title: title ?? this.title,
       description: description ?? this.description,
-      manager: manager ?? this.manager,
-      members: members ?? this.members,
       deadline: deadline ?? this.deadline,
       status: status ?? this.status,
+      manager: manager ?? this.manager,
+      members: members ?? this.members,
+      color: color ?? this.color,
       createdAt: createdAt,
       updatedAt: updatedAt,
       progress: progress ?? this.progress,

@@ -19,8 +19,16 @@ const ProjectSchema = new Schema(
     },
     members: [
       {
-        type: Schema.Types.ObjectId,
-        ref: "User",
+        userId: {
+          type: Schema.Types.ObjectId,
+          ref: "User",
+          required: true,
+        },
+        role: {
+          type: String,
+          enum: ["owner", "admin", "member", "viewer"],
+          default: "member",
+        },
       },
     ],
     deadline: {
@@ -28,8 +36,12 @@ const ProjectSchema = new Schema(
     },
     status: {
       type: String,
-      enum: ["Planning", "In Progress", "Completed"],
+      enum: ["Planning", "In Progress", "On Hold", "Completed", "Cancelled"],
       default: "Planning",
+    },
+    color: {
+      type: String,
+      default: "#2196F3", // Default blue color
     },
     createdAt: {
       type: Date,
@@ -44,6 +56,22 @@ const ProjectSchema = new Schema(
     timestamps: true,
   },
 )
+
+// Ensure the creator is added as the owner
+ProjectSchema.pre("save", function (next) {
+  // Remove any malformed members (missing userId)
+  this.members = (this.members || []).filter(m => m.userId);
+  if (this.isNew) {
+    // Only add the manager if not already present
+    const alreadyMember = this.members.some(
+      (m) => m.userId && m.userId.toString() === this.manager.toString()
+    );
+    if (!alreadyMember) {
+      this.members.push({ userId: this.manager, role: "owner" });
+    }
+  }
+  next();
+})
 
 // Add a method to calculate project progress and update status
 ProjectSchema.methods.calculateProgress = async function () {

@@ -11,11 +11,14 @@ exports.getAllProjects = async (req, res) => {
   try {
     // Find projects where the user is a manager or a member
     const projects = await Project.find({
-      $or: [{ manager: req.user._id }, { members: req.user._id }],
+      $or: [{ manager: req.user._id }, { "members.userId": req.user._id }],
     })
       .populate("manager", "name email profilePicture")
-      .populate("members", "name email profilePicture")
+      .populate("members.userId", "name email profilePicture")
       .sort({ createdAt: -1 })
+
+    // Debug print to check populated projects
+    console.log("getAllProjects - Raw projects before population:", JSON.stringify(projects, null, 2))
 
     // Calculate progress and update status for each project
     const projectsWithProgress = await Promise.all(
@@ -26,6 +29,9 @@ exports.getAllProjects = async (req, res) => {
         return projectObj
       }),
     )
+
+    // Debug print to check final response
+    console.log("getAllProjects - Final response:", JSON.stringify(projectsWithProgress, null, 2))
 
     res.status(200).json({
       success: true,
@@ -49,9 +55,15 @@ exports.getProjectById = async (req, res) => {
   try {
     const { projectId } = req.params
 
+    // Debug print the project ID
+    console.log("getProjectById - Project ID:", projectId)
+
     const project = await Project.findById(projectId)
       .populate("manager", "name email profilePicture")
-      .populate("members", "name email profilePicture")
+      .populate("members.userId", "name email profilePicture")
+
+    // Debug print to check populated project
+    console.log("getProjectById - Populated project just before response:", JSON.stringify(project, null, 2))
 
     if (!project) {
       return res.status(404).json({
@@ -64,6 +76,9 @@ exports.getProjectById = async (req, res) => {
     const projectObj = project.toObject()
     const progress = await project.calculateProgress()
     projectObj.progress = progress
+
+    // Debug print to check final response
+    console.log("getProjectById - Final response:", JSON.stringify(projectObj, null, 2))
 
     res.status(200).json({
       success: true,
@@ -84,7 +99,7 @@ exports.getProjectById = async (req, res) => {
 // Create a new project
 exports.createProject = async (req, res) => {
   try {
-    const { title, description, members, deadline } = req.body
+    const { title, description, members, deadline, color } = req.body
 
     // Create the project with the current user as manager
     const project = await Project.create({
@@ -94,18 +109,13 @@ exports.createProject = async (req, res) => {
       members: members || [],
       deadline,
       status: "Planning", // Default status for new projects
+      color: color || "#2196F3", // Use color from request or default
     })
-
-    // Add the manager to members if not already included
-    if (!project.members.includes(req.user._id)) {
-      project.members.push(req.user._id)
-      await project.save()
-    }
 
     // Populate manager and members for the response
     const populatedProject = await Project.findById(project._id)
       .populate("manager", "name email profilePicture")
-      .populate("members", "name email profilePicture")
+      .populate("members.userId", "name email profilePicture")
 
     // Calculate initial progress
     const projectObj = populatedProject.toObject()
@@ -114,7 +124,8 @@ exports.createProject = async (req, res) => {
 
     // Create notifications for members
     if (members && members.length > 0) {
-      for (const memberId of members) {
+      for (const member of members) {
+        const memberId = member.userId || member; // support both object and string
         // Don't notify the creator/manager
         if (memberId.toString() !== req.user._id.toString()) {
           await createNotification({
@@ -150,10 +161,12 @@ exports.createProject = async (req, res) => {
 exports.updateProject = async (req, res) => {
   try {
     const { projectId } = req.params
-    const updates = req.body
+    const { title, description, deadline, status, color, members } = req.body
 
-    // Remove status from updates as it's now managed automatically
-    delete updates.status
+    // Debug logging
+    console.log('Update Project - User Role:', req.userRole)
+    console.log('Update Project - User ID:', req.user._id)
+    console.log('Update Project - Members:', members)
 
     // Find the project
     const project = await Project.findById(projectId)
@@ -164,53 +177,70 @@ exports.updateProject = async (req, res) => {
       })
     }
 
+    // Debug logging
+    console.log('Project Manager ID:', project.manager)
+    console.log('Project Manager ID type:', typeof project.manager)
+    console.log('User ID type:', typeof req.user._id)
+
     // Check if user is the manager
-    if (project.manager.toString() !== req.user._id.toString()) {
+    const isManager = project.manager.toString() === req.user._id.toString()
+    
+    // Check if user is an admin (either globally or in the project)
+    const isGlobalAdmin = req.userRole && (
+      req.userRole.toLowerCase() === "admin" || 
+      req.userRole === "Admin"
+    )
+    
+    // Check if user is an admin in this project
+    const projectMember = project.members.find(
+      member => member.userId.toString() === req.user._id.toString()
+    )
+    const isProjectAdmin = projectMember && projectMember.role === "admin"
+
+    // Debug logging
+    console.log('Is Manager:', isManager)
+    console.log('Is Global Admin:', isGlobalAdmin)
+    console.log('Is Project Admin:', isProjectAdmin)
+    console.log('User Role:', req.userRole)
+    console.log('Project Member Role:', projectMember ? projectMember.role : 'Not a member')
+
+    // Allow manager, global admin, or project admin to update project details
+    if (!isManager && !isGlobalAdmin && !isProjectAdmin) {
       return res.status(403).json({
         success: false,
-        message: "Only the project manager can update the project",
+        message: "Only project manager or admin can update project details",
       })
     }
 
-    // Check if members are being updated
-    const membersChanged = updates.members && JSON.stringify(updates.members) !== JSON.stringify(project.members)
-    const oldMembers = [...project.members].map((id) => id.toString())
-
-    // Update the project
-    const updatedProject = await Project.findByIdAndUpdate(
-      projectId,
-      { $set: updates },
-      { new: true, runValidators: true },
-    )
-      .populate("manager", "name email profilePicture")
-      .populate("members", "name email profilePicture")
-
-    // Calculate progress and update status
-    const projectObj = updatedProject.toObject()
-    const progress = await updatedProject.calculateProgress()
-    projectObj.progress = progress
-
-    // If members were updated, notify new members
-    if (membersChanged && updates.members) {
-      const newMembers = updates.members.filter((id) => !oldMembers.includes(id.toString()))
-
-      for (const memberId of newMembers) {
-        await createNotification({
-          recipient: memberId,
-          sender: req.user._id,
-          message: `You have been added to project "${project.title}"`,
-          relatedItem: {
-            itemId: project._id,
-            itemType: "Project",
-          },
+    // Update project fields
+    if (title) project.title = title
+    if (description) project.description = description
+    if (deadline) project.deadline = deadline
+    if (status) project.status = status
+    if (color) project.color = color
+    if (members) {
+      // Ensure the manager is always included in members
+      const managerExists = members.some(m => m.userId === project.manager.toString())
+      if (!managerExists) {
+        members.push({
+          userId: project.manager,
+          role: 'owner'
         })
       }
+      project.members = members
     }
+
+    await project.save()
+
+    // Populate manager and members for the response
+    const updatedProject = await Project.findById(projectId)
+      .populate("manager", "name email profilePicture")
+      .populate("members.userId", "name email profilePicture")
 
     res.status(200).json({
       success: true,
       data: {
-        project: projectObj,
+        project: updatedProject,
       },
     })
   } catch (error) {
@@ -282,7 +312,7 @@ exports.deleteProject = async (req, res) => {
 exports.addMember = async (req, res) => {
   try {
     const { projectId } = req.params
-    const { userId } = req.body
+    const { userId, role } = req.body
 
     // Validate user exists
     const user = await User.findById(userId)
@@ -303,27 +333,32 @@ exports.addMember = async (req, res) => {
     }
 
     // Check if user is already a member
-    if (project.members.includes(userId)) {
+    if (project.members.some(member => member.userId._id.toString() === userId)) {
       return res.status(400).json({
         success: false,
         message: "User is already a member of this project",
       })
     }
 
-    // Add user to members
-    project.members.push(userId)
+    // Add user to members with role
+    project.members.push({
+      userId: {
+        _id: userId
+      },
+      role: role || "member"
+    })
     await project.save()
 
     // Populate manager and members for the response
     const updatedProject = await Project.findById(projectId)
       .populate("manager", "name email profilePicture")
-      .populate("members", "name email profilePicture")
+      .populate("members.userId", "name email profilePicture")
 
     // Create notification for the added member
     await createNotification({
       recipient: userId,
       sender: req.user._id,
-      message: `You have been added to project "${project.title}"`,
+      message: `You have been added to project "${project.title}" as a ${role || "member"}`,
       relatedItem: {
         itemId: project._id,
         itemType: "Project",
@@ -383,7 +418,7 @@ exports.removeMember = async (req, res) => {
     // Populate manager and members for the response
     const updatedProject = await Project.findById(projectId)
       .populate("manager", "name email profilePicture")
-      .populate("members", "name email profilePicture")
+      .populate("members.userId", "name email profilePicture")
 
     // Create notification for the removed member
     await createNotification({

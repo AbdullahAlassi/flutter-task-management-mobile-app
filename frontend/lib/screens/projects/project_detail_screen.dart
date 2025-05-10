@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:frontend/core/models/board.dart';
 import 'package:frontend/core/models/project.dart';
 import 'package:frontend/core/models/task.dart';
+import 'package:frontend/core/models/user.dart';
 import 'package:frontend/core/providers/auth_provider.dart';
 import 'package:frontend/core/services/board_service.dart';
 import 'package:frontend/core/services/task_service.dart';
@@ -96,49 +97,76 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final authProvider = Provider.of<AuthProvider>(context);
+    final currentUserId = authProvider.user?.id;
+    final userRole = authProvider.user?.role?.toLowerCase();
+    final isOwner = currentUserId == _project.manager;
+    final isAdmin = userRole == 'admin';
+
+    // Parse the project color
+    Color projectColor;
+    try {
+      projectColor = Color(int.parse(_project.color.replaceAll('#', '0xFF')));
+    } catch (e) {
+      projectColor = Colors.blue;
+    }
+
     return Scaffold(
       appBar: AppBar(
         title: Text(_project.title),
         actions: [
-          PopupMenuButton<String>(
-            icon: const Icon(Icons.more_vert),
-            onSelected: (value) async {
-              if (value == 'edit') {
-                final result = await Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (_) => EditProjectScreen(project: _project),
-                  ),
-                );
-                if (result == true && mounted) {
-                  // Refresh the project data
-                  final authProvider = Provider.of<AuthProvider>(
-                    context,
-                    listen: false,
-                  );
-                  if (authProvider.token != null) {
-                    final projectService = ProjectService();
-                    try {
-                      final updatedProject = await projectService
-                          .getProjectById(authProvider.token!, _project.id);
-                      if (mounted) {
-                        setState(() {
-                          _project = updatedProject;
-                        });
-                      }
-                    } catch (e) {
-                      if (mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text('Error updating project: $e')),
-                        );
+          if (isOwner || isAdmin)
+            PopupMenuButton<String>(
+              icon: const Icon(Icons.more_vert),
+              onSelected: (value) async {
+                final authProvider =
+                    Provider.of<AuthProvider>(context, listen: false);
+                final currentUserId = authProvider.user?.id;
+                final userRole = authProvider.user?.role.toLowerCase();
+                final isOwner = currentUserId == _project.manager;
+                final isAdmin = userRole == 'admin';
+
+                if (value == 'edit') {
+                  if (isOwner || isAdmin) {
+                    final result = await Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => EditProjectScreen(project: _project),
+                      ),
+                    );
+                    if (result == true && mounted) {
+                      // Refresh the project data
+                      if (authProvider.token != null) {
+                        final projectService = ProjectService();
+                        try {
+                          final updatedProject = await projectService
+                              .getProjectById(authProvider.token!, _project.id);
+                          if (mounted) {
+                            setState(() {
+                              _project = updatedProject;
+                            });
+                          }
+                        } catch (e) {
+                          if (mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                  content: Text('Error updating project: $e')),
+                            );
+                          }
+                        }
                       }
                     }
+                  } else {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                          content: Text(
+                              'Only owners or admins can edit the project.')),
+                    );
                   }
-                }
-              } else if (value == 'delete') {
-                final confirmed = await showDialog<bool>(
-                  context: context,
-                  builder:
-                      (context) => AlertDialog(
+                } else if (value == 'delete') {
+                  if (isOwner) {
+                    final confirmed = await showDialog<bool>(
+                      context: context,
+                      builder: (context) => AlertDialog(
                         title: const Text('Delete Project'),
                         content: const Text(
                           'Are you sure you want to delete this project? This action cannot be undone.',
@@ -157,85 +185,107 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                           ),
                         ],
                       ),
-                );
+                    );
 
-                if (confirmed == true && mounted) {
-                  final authProvider = Provider.of<AuthProvider>(
-                    context,
-                    listen: false,
-                  );
-                  if (authProvider.token != null) {
-                    final projectService = ProjectService();
-                    try {
-                      await projectService.deleteProject(
-                        authProvider.token!,
-                        _project.id,
-                      );
-                      if (mounted) {
-                        Navigator.of(context).pop(true);
-                      }
-                    } catch (e) {
-                      if (mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text('Error deleting project: $e')),
-                        );
+                    if (confirmed == true && mounted) {
+                      if (authProvider.token != null) {
+                        final projectService = ProjectService();
+                        try {
+                          await projectService.deleteProject(
+                            authProvider.token!,
+                            _project.id,
+                          );
+                          if (mounted) {
+                            Navigator.of(context).pop(true);
+                          }
+                        } catch (e) {
+                          if (mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                  content: Text('Error deleting project: $e')),
+                            );
+                          }
+                        }
                       }
                     }
+                  } else {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                          content: Text(
+                              'Only the project owner can delete the project.')),
+                    );
                   }
                 }
-              }
-            },
-            itemBuilder:
-                (context) => [
-                  const PopupMenuItem(
-                    value: 'edit',
-                    child: Row(
-                      children: [
-                        Icon(Icons.edit, size: 20),
-                        SizedBox(width: 8),
-                        Text('Edit Project'),
-                      ],
-                    ),
+              },
+              itemBuilder: (context) => [
+                const PopupMenuItem(
+                  value: 'edit',
+                  child: Row(
+                    children: [
+                      Icon(Icons.edit, size: 20),
+                      SizedBox(width: 8),
+                      Text('Edit Project'),
+                    ],
                   ),
-                  const PopupMenuItem(
-                    value: 'delete',
-                    child: Row(
-                      children: [
-                        Icon(Icons.delete, size: 20, color: Colors.red),
-                        SizedBox(width: 8),
-                        Text(
-                          'Delete Project',
-                          style: TextStyle(color: Colors.red),
-                        ),
-                      ],
-                    ),
+                ),
+                const PopupMenuItem(
+                  value: 'delete',
+                  child: Row(
+                    children: [
+                      Icon(Icons.delete, size: 20, color: Colors.red),
+                      SizedBox(width: 8),
+                      Text(
+                        'Delete Project',
+                        style: TextStyle(color: Colors.red),
+                      ),
+                    ],
                   ),
-                ],
-          ),
+                ),
+              ],
+            ),
         ],
       ),
       body: RefreshIndicator(
         onRefresh: () async {
           _loadBoards();
         },
-        child:
-            _error != null
-                ? Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Text('Error: $_error'),
-                      const SizedBox(height: 16),
-                      ElevatedButton(
-                        onPressed: _loadBoards,
-                        child: const Text('Retry'),
+        child: Column(
+          children: [
+            // Color banner at the top
+            Container(
+              width: double.infinity,
+              height: 120,
+              decoration: BoxDecoration(
+                color: projectColor,
+                borderRadius: const BorderRadius.only(
+                  topLeft: Radius.circular(18),
+                  topRight: Radius.circular(18),
+                ),
+                border: Border.all(color: Colors.black38),
+              ),
+            ),
+            // The rest of the content
+            Expanded(
+              child: _error != null
+                  ? Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Text('Error: $_error'),
+                          const SizedBox(height: 16),
+                          ElevatedButton(
+                            onPressed: _loadBoards,
+                            child: const Text('Retry'),
+                          ),
+                        ],
                       ),
-                    ],
-                  ),
-                )
-                : _isLoading
-                ? const Center(child: CircularProgressIndicator())
-                : _buildContent(),
+                    )
+                  : _isLoading
+                      ? const Center(child: CircularProgressIndicator())
+                      : _buildContent(),
+            ),
+          ],
+        ),
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: () async {
@@ -265,8 +315,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
           _buildProjectHeader(),
           // Set a fixed height for the Kanban board container
           SizedBox(
-            height:
-                MediaQuery.of(context).size.height -
+            height: MediaQuery.of(context).size.height -
                 200, // Adjust based on your layout
             child: _buildBoardsView(),
           ),
@@ -324,6 +373,10 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
           ),
           const SizedBox(height: 8),
           _buildMemberAvatars(),
+          if (progress != null) ...[
+            const SizedBox(height: 16),
+            _buildProgressBar(progress),
+          ],
         ],
       ),
     );
@@ -345,7 +398,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
               radius: 16,
               backgroundColor: Colors.grey[300],
               child: Text(
-                member.name.isNotEmpty ? member.name[0].toUpperCase() : '?',
+                (member.name.isNotEmpty) ? member.name[0].toUpperCase() : '?',
                 style: const TextStyle(
                   fontWeight: FontWeight.bold,
                   color: Colors.black54,
@@ -374,6 +427,53 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
   int _getRemainingDays(DateTime deadline) {
     final now = DateTime.now();
     return deadline.difference(now).inDays;
+  }
+
+  Widget _buildProgressBar(ProjectProgress progress) {
+    final percentage = progress.progressPercentage.clamp(0.0, 100.0);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            const Text(
+              'Progress',
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+            ),
+            Text(
+              '${percentage.toStringAsFixed(0)}%',
+              style: TextStyle(color: Colors.grey[600], fontSize: 14),
+            ),
+          ],
+        ),
+        const SizedBox(height: 4),
+        LinearProgressIndicator(
+          value: percentage / 100,
+          backgroundColor: Colors.grey[200],
+          valueColor: AlwaysStoppedAnimation<Color>(
+            _getProgressColor(percentage),
+          ),
+          minHeight: 8,
+          borderRadius: BorderRadius.circular(4),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          '${progress.completedTasks}/${progress.totalTasks} tasks completed',
+          style: TextStyle(color: Colors.grey[600], fontSize: 12),
+        ),
+      ],
+    );
+  }
+
+  Color _getProgressColor(double percentage) {
+    if (percentage < 30) {
+      return Colors.red;
+    } else if (percentage < 70) {
+      return Colors.orange;
+    } else {
+      return Colors.green;
+    }
   }
 
   Widget _buildBoardsView() {
@@ -410,6 +510,17 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
           boardTasks: _boardTasks,
           onRefresh: _loadBoards,
           projectId: _project.id,
+          projectMembers: _project.members
+              .map((m) => User(
+                    id: m.id,
+                    name: m.name,
+                    email: m.email,
+                    role: m.role,
+                    createdAt: DateTime.now(),
+                    updatedAt: DateTime.now(),
+                  ))
+              .toList(),
+          project: _project,
         );
       },
     );

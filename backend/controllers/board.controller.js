@@ -26,12 +26,21 @@ class BoardController {
       const managerId = project.manager._id ? project.manager._id.toString() : project.manager.toString()
 
       // Check if the user is authorized
-      const isAdmin = req.userRole === "Admin"
-      const isManager = managerId === req.userId.toString()
+      const isAdmin = project.members.some((member) => 
+        member.userId._id.toString() === req.userId.toString() && 
+        member.role?.toLowerCase() === "admin"
+      );
+      const isManager = managerId === req.userId.toString();
       const isMember = project.members.some((member) => {
-        const memberId = member._id ? member._id.toString() : member.toString()
-        return memberId === req.userId.toString()
-      })
+        const memberId = member.userId._id.toString();
+        console.log("Comparing member ID:", memberId, "with user ID:", req.userId.toString());
+        return memberId === req.userId.toString();
+      });
+
+      console.log("Authorization Check Results:")
+      console.log("- Is Admin:", isAdmin)
+      console.log("- Is Manager:", isManager)
+      console.log("- Is Member:", isMember)
 
       if (!isAdmin && !isManager && !isMember) {
         return ApiResponse.error(res, "Unauthorized to create board in this project", 403)
@@ -58,27 +67,49 @@ class BoardController {
     try {
       const { projectId } = req.params
 
+      // Debug logging for request details
+      console.log("=== getBoardsByProject Debug Info ===")
+      console.log("Project ID:", projectId)
+      console.log("User ID:", req.userId)
+      console.log("User Role:", req.userRole)
+      console.log("Raw User Role:", req.userRole)
+
       // Check if user has access to the project
       const project = await projectService.getProjectById(projectId)
+      console.log("Project Manager:", project.manager)
+      console.log("Project Members:", JSON.stringify(project.members, null, 2))
 
       // Check if project.manager is an object or just an ID
       const managerId = project.manager._id ? project.manager._id.toString() : project.manager.toString()
+      console.log("Manager ID:", managerId)
 
       // Check if the user is authorized
-      const isAdmin = req.userRole === "Admin"
-      const isManager = managerId === req.userId.toString()
+      const isAdmin = project.members.some((member) => 
+        member.userId._id.toString() === req.userId.toString() && 
+        member.role?.toLowerCase() === "admin"
+      );
+      const isManager = managerId === req.userId.toString();
       const isMember = project.members.some((member) => {
-        const memberId = member._id ? member._id.toString() : member.toString()
-        return memberId === req.userId.toString()
-      })
+        const memberId = member.userId._id.toString();
+        console.log("Comparing member ID:", memberId, "with user ID:", req.userId.toString());
+        return memberId === req.userId.toString();
+      });
+
+      console.log("Authorization Check Results:")
+      console.log("- Is Admin:", isAdmin)
+      console.log("- Is Manager:", isManager)
+      console.log("- Is Member:", isMember)
 
       if (!isAdmin && !isManager && !isMember) {
+        console.log("Authorization Failed - User not authorized")
         return ApiResponse.error(res, "Unauthorized to view boards in this project", 403)
       }
 
+      console.log("Authorization Successful - Proceeding to fetch boards")
       const boards = await boardService.getBoardsByProject(projectId)
       return ApiResponse.success(res, "Boards retrieved successfully", { boards })
     } catch (error) {
+      console.error("Error in getBoardsByProject:", error)
       logger.error(`Error getting boards by project: ${error.message}`)
       return ApiResponse.error(
         res,
@@ -106,12 +137,15 @@ class BoardController {
       const managerId = project.manager._id ? project.manager._id.toString() : project.manager.toString()
 
       // Check if the user is authorized
-      const isAdmin = req.userRole === "Admin"
-      const isManager = managerId === req.userId.toString()
+      const isAdmin = project.members.some((member) => 
+        member.userId._id.toString() === req.userId.toString() && 
+        member.role?.toLowerCase() === "admin"
+      );
+      const isManager = managerId === req.userId.toString();
       const isMember = project.members.some((member) => {
-        const memberId = member._id ? member._id.toString() : member.toString()
-        return memberId === req.userId.toString()
-      })
+        const memberId = member.userId._id.toString();
+        return memberId === req.userId.toString();
+      });
 
       if (!isAdmin && !isManager && !isMember) {
         return ApiResponse.error(res, "Unauthorized to view this board", 403)
@@ -147,12 +181,15 @@ class BoardController {
       const managerId = project.manager._id ? project.manager._id.toString() : project.manager.toString()
 
       // Check if the user is authorized
-      const isAdmin = req.userRole === "Admin"
-      const isManager = managerId === req.userId.toString()
+      const isAdmin = project.members.some((member) => 
+        member.userId._id.toString() === req.userId.toString() && 
+        member.role?.toLowerCase() === "admin"
+      );
+      const isManager = managerId === req.userId.toString();
       const isMember = project.members.some((member) => {
-        const memberId = member._id ? member._id.toString() : member.toString()
-        return memberId === req.userId.toString()
-      })
+        const memberId = member.userId._id.toString();
+        return memberId === req.userId.toString();
+      });
 
       if (!isAdmin && !isManager && !isMember) {
         return ApiResponse.error(res, "Unauthorized to update this board", 403)
@@ -192,8 +229,11 @@ class BoardController {
       const managerId = project.manager._id ? project.manager._id.toString() : project.manager.toString()
 
       // Check if the user is authorized
-      const isAdmin = req.userRole === "Admin"
-      const isManager = managerId === req.userId.toString()
+      const isAdmin = project.members.some((member) => 
+        member.userId._id.toString() === req.userId.toString() && 
+        member.role?.toLowerCase() === "admin"
+      );
+      const isManager = managerId === req.userId.toString();
 
       if (!isAdmin && !isManager) {
         return ApiResponse.error(res, "Unauthorized to delete this board", 403)
@@ -230,11 +270,31 @@ class BoardController {
       const project = await projectService.getProjectById(projectId)
 
       // Check if the user is authorized
-      const isAdmin = req.userRole === "Admin"
-      const isManager = project.manager.toString() === req.userId.toString()
-      const isMember = project.members.some((member) => member.toString() === req.userId.toString())
+      const isAdmin = project.members.some((member) => 
+        member.userId._id.toString() === req.userId.toString() && 
+        member.role?.toLowerCase() === "admin"
+      );
+      const isManager = project.manager._id ? 
+        project.manager._id.toString() === req.userId.toString() : 
+        project.manager.toString() === req.userId.toString();
+      const isProjectMember = project.members.some((member) => {
+        const memberId = member.userId ? member.userId._id.toString() : member.toString();
+        const memberRole = member.role ? member.role.toLowerCase() : '';
+        return memberId === req.userId.toString() && (memberRole === 'admin' || memberRole === 'owner' || memberRole === 'member');
+      });
 
-      if (!isAdmin && !isManager && !isMember) {
+      // Debug logs for permission checks
+      logger.debug('Board reorder permission check details:', {
+        userId: req.userId,
+        userRole: req.userRole,
+        projectManager: project.manager,
+        isAdmin,
+        isManager,
+        isProjectMember,
+        projectId
+      });
+
+      if (!isAdmin && !isManager && !isProjectMember) {
         return ApiResponse.error(res, "Unauthorized to reorder boards in this project", 403)
       }
 

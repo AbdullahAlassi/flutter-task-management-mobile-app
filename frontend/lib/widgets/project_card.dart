@@ -11,93 +11,126 @@ class ProjectCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Parse the project color
+    Color projectColor;
+    try {
+      projectColor = Color(int.parse(project.color.replaceAll('#', '0xFF')));
+    } catch (e) {
+      projectColor = Colors.blue; // Default color if parsing fails
+    }
+
     return Card(
       margin: const EdgeInsets.only(bottom: 16),
       elevation: 2,
       child: InkWell(
         onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      project.title,
-                      style: const TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                  _buildStatusChip(project.status),
-                ],
-              ),
-              if (project.description != null &&
-                  project.description!.isNotEmpty)
-                Padding(
-                  padding: const EdgeInsets.only(top: 8),
-                  child: Text(
-                    project.description!,
-                    style: TextStyle(color: Colors.grey[600]),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Project Banner with color
+            Container(
+              height: 80,
+              decoration: BoxDecoration(
+                color: projectColor,
+                borderRadius: const BorderRadius.only(
+                  topLeft: Radius.circular(4),
+                  topRight: Radius.circular(4),
                 ),
-              const SizedBox(height: 16),
-              Row(
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text(
-                          'Team',
-                          style: TextStyle(
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          project.title,
+                          style: const TextStyle(
+                            fontSize: 18,
                             fontWeight: FontWeight.bold,
-                            fontSize: 14,
                           ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                         ),
-                        const SizedBox(height: 4),
-                        _buildTeamMembers(project.members),
-                      ],
-                    ),
+                      ),
+                      _buildStatusChip(project.status),
+                    ],
                   ),
-                  if (project.deadline != null)
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.end,
-                      children: [
-                        const Text(
-                          'Deadline',
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 14,
-                          ),
+                  if (project.description != null &&
+                      project.description!.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 8),
+                      child: Text(
+                        project.description!,
+                        style: TextStyle(color: Colors.grey[600]),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  const SizedBox(height: 16),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'Team',
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 14,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            _buildTeamMembers(project.members
+                                .map((m) => User(
+                                      id: m.id,
+                                      name: m.name,
+                                      email: m.email,
+                                      role: m.role,
+                                      createdAt: DateTime.now(),
+                                      updatedAt: DateTime.now(),
+                                    ))
+                                .toList()),
+                          ],
                         ),
-                        const SizedBox(height: 4),
-                        Text(
-                          DateFormat('MMM dd, yyyy').format(project.deadline!),
-                          style: TextStyle(
-                            color:
-                                _isDeadlineNear(project.deadline!)
+                      ),
+                      if (project.deadline != null)
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          children: [
+                            const Text(
+                              'Deadline',
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 14,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              DateFormat('MMM dd, yyyy')
+                                  .format(project.deadline!),
+                              style: TextStyle(
+                                color: _isDeadlineNear(project.deadline!)
                                     ? Colors.red
                                     : Colors.grey[600],
-                          ),
+                              ),
+                            ),
+                          ],
                         ),
-                      ],
-                    ),
+                    ],
+                  ),
+                  if (project.progress != null) ...[
+                    const SizedBox(height: 16),
+                    _buildProgressBar(project.progress!),
+                  ],
                 ],
               ),
-              if (project.progress != null) ...[
-                const SizedBox(height: 16),
-                _buildProgressBar(project.progress!),
-              ],
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
@@ -186,8 +219,7 @@ class ProjectCard extends StatelessWidget {
 
   Widget _buildMemberAvatar(User member) {
     // Check if profile picture is valid
-    bool hasValidProfilePic =
-        member.profilePicture != null &&
+    bool hasValidProfilePic = member.profilePicture != null &&
         member.profilePicture!.isNotEmpty &&
         member.profilePicture!.startsWith('http');
 
@@ -201,16 +233,15 @@ class ProjectCard extends StatelessWidget {
           backgroundColor: Colors.grey[300],
           backgroundImage:
               hasValidProfilePic ? NetworkImage(member.profilePicture!) : null,
-          child:
-              !hasValidProfilePic
-                  ? Text(
-                    member.name.isNotEmpty ? member.name[0].toUpperCase() : '?',
-                    style: const TextStyle(
-                      fontWeight: FontWeight.bold,
-                      color: Colors.black54,
-                    ),
-                  )
-                  : null,
+          child: !hasValidProfilePic
+              ? Text(
+                  member.name.isNotEmpty ? member.name[0].toUpperCase() : '?',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: Colors.black54,
+                  ),
+                )
+              : null,
         ),
       ),
     );

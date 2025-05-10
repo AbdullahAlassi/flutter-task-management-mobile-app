@@ -14,10 +14,15 @@ class SubtaskController {
    */
   async createSubtask(req, res) {
     try {
+      console.log('[DEBUG] [Controller] createSubtask called');
+      console.log('[DEBUG] [Controller] req.params:', req.params);
+      console.log('[DEBUG] [Controller] req.body:', req.body);
+      console.log('[DEBUG] [Controller] req.userId:', req.userId);
       const { taskId } = req.params;
       
       // Get task to check permissions
       const task = await taskService.getTaskById(taskId);
+      console.log('[DEBUG] [Controller] taskService.getTaskById result:', task);
       
       // Get board to check permissions
       const board = await boardService.getBoardById(task.board);
@@ -26,25 +31,40 @@ class SubtaskController {
       const project = await projectService.getProjectById(board.project);
       
       // Check if user has access to the project
-      if (req.userRole !== 'Admin' && 
-          project.manager._id.toString() !== req.userId && 
-          !project.members.some(member => member._id.toString() === req.userId)) {
+      const isAdmin = (req.userRole ? req.userRole.toLowerCase() : '') === "admin" || req.userRole === "Admin"
+      const isManager = project.manager._id ? project.manager._id.toString() === req.userId.toString() : project.manager.toString() === req.userId.toString()
+      const isProjectMember = project.members.some((member) => {
+        const memberId = member.userId ? member.userId.toString() : member.toString()
+        const memberRole = member.role ? member.role.toLowerCase() : ''
+        return memberId === req.userId.toString() && (memberRole === 'admin' || memberRole === 'owner' || memberRole === 'member')
+      })
+
+      if (!isAdmin && !isManager && !isProjectMember) {
+        console.log('[DEBUG] [Controller] Unauthorized user');
         return ApiResponse.error(res, 'Unauthorized to create subtask for this task', 403);
       }
       
+      console.log('[DEBUG] [Controller] Calling subtaskService.createSubtask');
       const subtask = await subtaskService.createSubtask(taskId, req.body, req.userId);
+      console.log('[DEBUG] [Controller] subtaskService.createSubtask result:', subtask);
       
       // Emit socket event for real-time updates
       const io = req.app.get('io');
       if (io) {
-        // Notify all project members
-        project.members.forEach(member => {
-          io.to(member.toString()).emit('subtask:created', { subtask, taskId });
-        });
+        try {
+          // Notify all project members
+          project.members.forEach(member => {
+            io.to(member.toString()).emit('subtask:created', { subtask, taskId });
+          });
+        } catch (socketError) {
+          console.error('[DEBUG] Socket event error:', socketError);
+          // Do not throw, just log
+        }
       }
       
       return ApiResponse.success(res, 'Subtask created successfully', { subtask }, 201);
     } catch (error) {
+      console.error('[DEBUG] [Controller] Error in createSubtask:', error);
       logger.error(`Error creating subtask: ${error.message}`);
       return ApiResponse.error(
         res, 
@@ -73,9 +93,15 @@ class SubtaskController {
       const project = await projectService.getProjectById(board.project);
       
       // Check if user has access to the project
-      if (req.userRole !== 'Admin' && 
-          project.manager._id.toString() !== req.userId && 
-          !project.members.some(member => member._id.toString() === req.userId)) {
+      const isAdmin = (req.userRole ? req.userRole.toLowerCase() : '') === "admin" || req.userRole === "Admin"
+      const isManager = project.manager._id ? project.manager._id.toString() === req.userId.toString() : project.manager.toString() === req.userId.toString()
+      const isProjectMember = project.members.some((member) => {
+        const memberId = member.userId ? member.userId.toString() : member.toString()
+        const memberRole = member.role ? member.role.toLowerCase() : ''
+        return memberId === req.userId.toString() && (memberRole === 'admin' || memberRole === 'owner' || memberRole === 'member')
+      })
+
+      if (!isAdmin && !isManager && !isProjectMember) {
         return ApiResponse.error(res, 'Unauthorized to access subtasks for this task', 403);
       }
       
@@ -112,9 +138,15 @@ class SubtaskController {
       const project = await projectService.getProjectById(board.project);
       
       // Check if user has access to the project
-      if (req.userRole !== 'Admin' && 
-          project.manager._id.toString() !== req.userId && 
-          !project.members.some(member => member._id.toString() === req.userId)) {
+      const isAdmin = (req.userRole ? req.userRole.toLowerCase() : '') === "admin" || req.userRole === "Admin"
+      const isManager = project.manager._id ? project.manager._id.toString() === req.userId.toString() : project.manager.toString() === req.userId.toString()
+      const isProjectMember = project.members.some((member) => {
+        const memberId = member.userId ? member.userId.toString() : member.toString()
+        const memberRole = member.role ? member.role.toLowerCase() : ''
+        return memberId === req.userId.toString() && (memberRole === 'admin' || memberRole === 'owner' || memberRole === 'member')
+      })
+
+      if (!isAdmin && !isManager && !isProjectMember) {
         return ApiResponse.error(res, 'Unauthorized to access this subtask', 403);
       }
       
@@ -151,9 +183,20 @@ class SubtaskController {
       const project = await projectService.getProjectById(board.project);
       
       // Check if user has permission to update this subtask
-      if (req.userRole !== 'Admin' && 
-          project.manager._id.toString() !== req.userId && 
-          !task.assignees.some(assignee => assignee._id.toString() === req.userId)) {
+      const userRole = standardizeRole(req.userRole || '')
+      const isOwner = userRole === "owner"
+      const isAdmin = userRole === "admin"
+      const isManager = project.manager._id ? project.manager._id.toString() === req.userId.toString() : project.manager.toString() === req.userId.toString()
+      const isProjectMember = project.members.some((member) => {
+        const memberId = member.userId ? member.userId.toString() : member.toString()
+        const memberRole = member.role ? standardizeRole(member.role) : 'viewer'
+        return memberId === req.userId.toString() && (memberRole === 'admin' || memberRole === 'owner' || memberRole === 'member')
+      })
+      const isAssignee = task.assignees.some((assignee) => assignee.toString() === req.userId.toString())
+
+      // Project owners, admins, and managers can update any subtask
+      // Project members and assignees can update their own subtasks
+      if (!isOwner && !isAdmin && !isManager && !isProjectMember && !isAssignee) {
         return ApiResponse.error(res, 'Unauthorized to update this subtask', 403);
       }
       
@@ -164,18 +207,17 @@ class SubtaskController {
       if (io) {
         // Notify all project members
         project.members.forEach(member => {
-          io.to(member.toString()).emit('subtask:updated', { subtask: updatedSubtask, taskId: task._id });
+          io.to(member.toString()).emit('subtask:updated', { subtaskId: id, taskId: task._id });
         });
       }
       
       return ApiResponse.success(res, 'Subtask updated successfully', { subtask: updatedSubtask });
     } catch (error) {
-      logger.error(`Error updating subtask: ${error.message}`);
-      return ApiResponse.error(
-        res, 
-        error.message === 'Subtask not found' ? 'Subtask not found' : 'Error updating subtask', 
-        error.message === 'Subtask not found' ? 404 : 500
-      );
+      logger.error(`Error updating subtask: ${error.message}`, {
+        subtaskId: req.params.id,
+        error: error.stack
+      });
+      return ApiResponse.error(res, error.message || 'Error updating subtask', 500);
     }
   }
   
@@ -201,9 +243,20 @@ class SubtaskController {
       const project = await projectService.getProjectById(board.project);
       
       // Check if user has permission to delete this subtask
-      if (req.userRole !== 'Admin' && 
-          project.manager._id.toString() !== req.userId && 
-          !task.assignees.some(assignee => assignee._id.toString() === req.userId)) {
+      const userRole = standardizeRole(req.userRole || '')
+      const isOwner = userRole === "owner"
+      const isAdmin = userRole === "admin"
+      const isManager = project.manager._id ? project.manager._id.toString() === req.userId.toString() : project.manager.toString() === req.userId.toString()
+      const isProjectMember = project.members.some((member) => {
+        const memberId = member.userId ? member.userId.toString() : member.toString()
+        const memberRole = member.role ? standardizeRole(member.role) : 'viewer'
+        return memberId === req.userId.toString() && (memberRole === 'admin' || memberRole === 'owner' || memberRole === 'member')
+      })
+      const isAssignee = task.assignees.some((assignee) => assignee.toString() === req.userId.toString())
+
+      // Project owners, admins, and managers can delete any subtask
+      // Project members and assignees can delete their own subtasks
+      if (!isOwner && !isAdmin && !isManager && !isProjectMember && !isAssignee) {
         return ApiResponse.error(res, 'Unauthorized to delete this subtask', 403);
       }
       
@@ -220,12 +273,11 @@ class SubtaskController {
       
       return ApiResponse.success(res, 'Subtask deleted successfully');
     } catch (error) {
-      logger.error(`Error deleting subtask: ${error.message}`);
-      return ApiResponse.error(
-        res, 
-        error.message === 'Subtask not found' ? 'Subtask not found' : 'Error deleting subtask', 
-        error.message === 'Subtask not found' ? 404 : 500
-      );
+      logger.error(`Error deleting subtask: ${error.message}`, {
+        subtaskId: req.params.id,
+        error: error.stack
+      });
+      return ApiResponse.error(res, error.message || 'Error deleting subtask', 500);
     }
   }
   
@@ -253,9 +305,15 @@ class SubtaskController {
       const project = await projectService.getProjectById(board.project);
       
       // Check if user has access to the project
-      if (req.userRole !== 'Admin' && 
-          project.manager._id.toString() !== req.userId && 
-          !project.members.some(member => member._id.toString() === req.userId)) {
+      const isAdmin = (req.userRole ? req.userRole.toLowerCase() : '') === "admin" || req.userRole === "Admin"
+      const isManager = project.manager._id ? project.manager._id.toString() === req.userId.toString() : project.manager.toString() === req.userId.toString()
+      const isProjectMember = project.members.some((member) => {
+        const memberId = member.userId ? member.userId.toString() : member.toString()
+        const memberRole = member.role ? member.role.toLowerCase() : ''
+        return memberId === req.userId.toString() && (memberRole === 'admin' || memberRole === 'owner' || memberRole === 'member')
+      })
+
+      if (!isAdmin && !isManager && !isProjectMember) {
         return ApiResponse.error(res, 'Unauthorized to reorder subtasks for this task', 403);
       }
       

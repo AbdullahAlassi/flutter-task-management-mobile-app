@@ -293,26 +293,51 @@ class TaskService {
     String targetBoardId,
   ) async {
     try {
-      final response = await http.patch(
+      // First get the task to get its current board
+      final task = await getTaskById(token, taskId);
+
+      // Get the board to get its project ID
+      final response = await http.get(
+        Uri.parse('${ApiConstants.baseUrl}/api/boards/${task.board}'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+      );
+
+      if (response.statusCode != 200) {
+        throw ApiException(
+          message: 'Failed to get board information',
+          statusCode: response.statusCode,
+        );
+      }
+
+      final boardData = jsonDecode(response.body);
+      final projectId = boardData['data']['board']['project'];
+
+      final moveResponse = await http.patch(
         Uri.parse('${ApiConstants.baseUrl}/api/tasks/$taskId/move'),
         headers: {
           'Content-Type': 'application/json',
           'Authorization': 'Bearer $token',
         },
-        body: jsonEncode({'targetBoard': targetBoardId}),
+        body: jsonEncode({
+          'targetBoard': targetBoardId,
+          'projectId': projectId,
+        }),
       );
 
       // Debug print
-      debugPrint('moveTask response status: ${response.statusCode}');
+      debugPrint('moveTask response status: ${moveResponse.statusCode}');
 
-      final responseData = jsonDecode(response.body);
+      final responseData = jsonDecode(moveResponse.body);
 
-      if (response.statusCode == 200) {
+      if (moveResponse.statusCode == 200) {
         return Task.fromJson(responseData['data']['task']);
       } else {
         throw ApiException(
           message: responseData['message'] ?? 'Failed to move task',
-          statusCode: response.statusCode,
+          statusCode: moveResponse.statusCode,
         );
       }
     } catch (e) {

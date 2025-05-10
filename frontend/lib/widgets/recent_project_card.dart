@@ -17,8 +17,13 @@ class RecentProjectCard extends StatelessWidget {
     // Calculate days left
     final daysLeft = project.deadline?.difference(DateTime.now()).inDays;
 
-    // Get random icon for project
-    final projectIcon = _getRandomIcon();
+    // Parse the project color
+    Color projectColor;
+    try {
+      projectColor = Color(int.parse(project.color.replaceAll('#', '0xFF')));
+    } catch (e) {
+      projectColor = AppColors.primary;
+    }
 
     return Card(
       elevation: 0,
@@ -29,7 +34,7 @@ class RecentProjectCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Gradient Header with Logo and Team Members
+            // Solid Color Header with Team Members
             Container(
               height: 120,
               decoration: BoxDecoration(
@@ -37,15 +42,7 @@ class RecentProjectCard extends StatelessWidget {
                   topLeft: Radius.circular(16),
                   topRight: Radius.circular(16),
                 ),
-                gradient: LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [
-                    Colors.orange[300]!,
-                    Colors.blue[400]!,
-                    Colors.purple[500]!,
-                  ],
-                ),
+                color: projectColor,
               ),
               child: Padding(
                 padding: const EdgeInsets.all(16.0),
@@ -63,7 +60,7 @@ class RecentProjectCard extends StatelessWidget {
                       ),
                       child: Center(
                         child: Icon(
-                          projectIcon,
+                          _getRandomIcon(),
                           color: AppColors.primary,
                           size: 24,
                         ),
@@ -74,29 +71,32 @@ class RecentProjectCard extends StatelessWidget {
                     Row(
                       children: [
                         // Display up to 3 team members
-                        ...project.members
-                            .take(3)
-                            .map(
+                        ...project.members.take(3).map(
                               (member) => Align(
                                 widthFactor: 0.7,
                                 child: CircleAvatar(
                                   radius: 16,
                                   backgroundColor: Colors.white,
-                                  backgroundImage:
-                                      member.profilePicture != null
-                                          ? NetworkImage(member.profilePicture!)
-                                          : null,
-                                  child:
-                                      member.profilePicture == null
-                                          ? Text(
-                                            member.name.isNotEmpty
-                                                ? member.name[0].toUpperCase()
-                                                : '?',
-                                            style: const TextStyle(
-                                              fontWeight: FontWeight.bold,
-                                            ),
-                                          )
-                                          : null,
+                                  backgroundImage: member.profilePicture !=
+                                              null &&
+                                          member.profilePicture!.isNotEmpty &&
+                                          member.profilePicture!
+                                              .startsWith('http')
+                                      ? NetworkImage(member.profilePicture!)
+                                      : null,
+                                  child: member.profilePicture == null ||
+                                          member.profilePicture!.isEmpty ||
+                                          !member.profilePicture!
+                                              .startsWith('http')
+                                      ? Text(
+                                          member.name.isNotEmpty
+                                              ? member.name[0].toUpperCase()
+                                              : '?',
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        )
+                                      : null,
                                 ),
                               ),
                             ),
@@ -188,14 +188,13 @@ class RecentProjectCard extends StatelessWidget {
                             ? daysLeft > 0
                                 ? '$daysLeft Days Left'
                                 : daysLeft == 0
-                                ? 'Due Today'
-                                : '${daysLeft.abs()} Days Overdue'
+                                    ? 'Due Today'
+                                    : '${daysLeft.abs()} Days Overdue'
                             : 'No deadline',
                         style: TextStyle(
-                          color:
-                              daysLeft != null && daysLeft < 0
-                                  ? Colors.red
-                                  : Colors.grey,
+                          color: daysLeft != null && daysLeft < 0
+                              ? Colors.red
+                              : Colors.grey,
                         ),
                       ),
                     ],

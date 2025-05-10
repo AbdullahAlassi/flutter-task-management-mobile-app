@@ -4,6 +4,7 @@ import 'package:frontend/core/providers/auth_provider.dart';
 import 'package:frontend/core/providers/theme_provider.dart';
 import 'package:frontend/screens/auth/login_screen.dart';
 import 'package:frontend/screens/profile/edit_profile_screen.dart';
+import 'package:frontend/screens/profile/change_password_screen.dart';
 import 'package:frontend/widgets/custom_button.dart';
 
 class ProfileScreen extends StatelessWidget {
@@ -40,17 +41,15 @@ class ProfileScreen extends StatelessWidget {
             const SizedBox(height: 16),
             CircleAvatar(
               radius: 50,
-              backgroundImage:
-                  user.profilePicture != null
-                      ? NetworkImage(user.profilePicture!)
-                      : null,
-              child:
-                  user.profilePicture == null
-                      ? Text(
-                        user.name.isNotEmpty ? user.name[0].toUpperCase() : '?',
-                        style: const TextStyle(fontSize: 36),
-                      )
-                      : null,
+              backgroundImage: user.profilePicture != null
+                  ? NetworkImage(user.profilePicture!)
+                  : null,
+              child: user.profilePicture == null
+                  ? Text(
+                      user.name.isNotEmpty ? user.name[0].toUpperCase() : '?',
+                      style: const TextStyle(fontSize: 36),
+                    )
+                  : null,
             ),
             const SizedBox(height: 16),
             Text(user.name, style: Theme.of(context).textTheme.headlineSmall),
@@ -72,15 +71,10 @@ class ProfileScreen extends StatelessWidget {
               icon: Icons.lock,
               title: 'Change Password',
               onTap: () {
-                // Navigate to change password screen
-              },
-            ),
-            _buildProfileItem(
-              context,
-              icon: Icons.notifications,
-              title: 'Notification Settings',
-              onTap: () {
-                // Navigate to notification settings screen
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                      builder: (_) => const ChangePasswordScreen()),
+                );
               },
             ),
             _buildProfileItem(
@@ -107,21 +101,20 @@ class ProfileScreen extends StatelessWidget {
               onPressed: () async {
                 final confirmed = await showDialog<bool>(
                   context: context,
-                  builder:
-                      (context) => AlertDialog(
-                        title: const Text('Logout'),
-                        content: const Text('Are you sure you want to logout?'),
-                        actions: [
-                          TextButton(
-                            onPressed: () => Navigator.of(context).pop(false),
-                            child: const Text('Cancel'),
-                          ),
-                          TextButton(
-                            onPressed: () => Navigator.of(context).pop(true),
-                            child: const Text('Logout'),
-                          ),
-                        ],
+                  builder: (context) => AlertDialog(
+                    title: const Text('Logout'),
+                    content: const Text('Are you sure you want to logout?'),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.of(context).pop(false),
+                        child: const Text('Cancel'),
                       ),
+                      TextButton(
+                        onPressed: () => Navigator.of(context).pop(true),
+                        child: const Text('Logout'),
+                      ),
+                    ],
+                  ),
                 );
 
                 if (confirmed == true) {

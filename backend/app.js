@@ -17,6 +17,7 @@ const activityLogRoutes = require("./routes/activityLog.routes")
 const notificationRoutes = require("./routes/notifications.routes")
 const teamRoutes = require("./routes/teams.routes")
 const searchRoutes = require('./routes/search.routes')
+const calendarRoutes = require('./routes/calendar.routes')
 
 // Initialize express app
 const app = express()
@@ -44,6 +45,7 @@ app.use("/api/activity-logs", activityLogRoutes)
 app.use("/api/notifications", notificationRoutes)
 app.use("/api/teams", teamRoutes)
 app.use("/api/search", searchRoutes)
+app.use("/api/calendar", calendarRoutes)
 
 // Health check route
 app.get("/health", (req, res) => {

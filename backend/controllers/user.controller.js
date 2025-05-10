@@ -1,5 +1,8 @@
 const User = require("../models/user.model")
 const bcrypt = require("bcryptjs")
+const { standardizeRole } = require("../utils/permissions")
+const ApiResponse = require("../utils/apiResponse")
+const logger = require("../utils/logger")
 
 // Get all users (admin and project managers)
 exports.getAllUsers = async (req, res) => {
@@ -8,230 +11,148 @@ exports.getAllUsers = async (req, res) => {
       .select("-password -__v -createdAt -updatedAt")
       .sort({ name: 1 });
 
-    res.status(200).json({
-      success: true,
-      data: {
-        users,
-      },
-    });
+    return ApiResponse.success(res, "Users retrieved successfully", { users });
   } catch (error) {
-    console.error("Error in getAllUsers:", error);
-    res.status(500).json({
-      success: false,
-      message: "Server Error",
-    });
+    logger.error(`Error in getAllUsers: ${error.message}`);
+    return ApiResponse.error(res, "Error retrieving users", 500);
   }
 };
 
 // Get current user profile
 exports.getCurrentUser = async (req, res) => {
   try {
-    console.log("getCurrentUser called")
-    console.log("req.user:", req.user)
-
-    // Check if req.user exists
     if (!req.user) {
-      console.log("req.user is undefined")
-      return res.status(401).json({
-        success: false,
-        message: "User not authenticated",
-      })
+      return ApiResponse.error(res, "User not authenticated", 401);
     }
 
-    // Check if req.user.id exists
-    if (!req.user.id && !req.user._id) {
-      console.log("Neither req.user.id nor req.user._id exists")
-      return res.status(500).json({
-        success: false,
-        message: "User ID not found in token",
-      })
-    }
-
-    // Use either id or _id, whichever is available
-    const userId = req.user.id || req.user._id
-    console.log("Looking up user with ID:", userId)
-
-    const user = await User.findById(userId).select("-password")
-    console.log("User found:", user ? "Yes" : "No")
+    const userId = req.user.id || req.user._id;
+    const user = await User.findById(userId).select("-password");
 
     if (!user) {
-      return res.status(404).json({
-        success: false,
-        message: "User not found",
-      })
+      return ApiResponse.error(res, "User not found", 404);
     }
 
-    res.status(200).json({
-      success: true,
-      data: {
-        user,
-      },
-    })
+    return ApiResponse.success(res, "User profile retrieved successfully", { user });
   } catch (error) {
-    console.error("Error in getCurrentUser:", error)
-    res.status(500).json({
-      success: false,
-      message: "Error retrieving user profile",
-    })
+    logger.error(`Error in getCurrentUser: ${error.message}`);
+    return ApiResponse.error(res, "Error retrieving user profile", 500);
   }
-}
+};
 
 // Get user by ID
 exports.getUserById = async (req, res) => {
   try {
-    const user = await User.findById(req.params.id).select("-password")
+    const user = await User.findById(req.params.id).select("-password");
 
     if (!user) {
-      return res.status(404).json({
-        success: false,
-        message: "User not found",
-      })
+      return ApiResponse.error(res, "User not found", 404);
     }
 
-    res.status(200).json({
-      success: true,
-      data: {
-        user,
-      },
-    })
+    return ApiResponse.success(res, "User retrieved successfully", { user });
   } catch (error) {
-    console.error("Error in getUserById:", error)
-    res.status(500).json({
-      success: false,
-      message: "Error retrieving user",
-    })
+    logger.error(`Error in getUserById: ${error.message}`);
+    return ApiResponse.error(res, "Error retrieving user", 500);
   }
-}
+};
 
 // Update user
 exports.updateUser = async (req, res) => {
   try {
-    // Get data to update
-    const { name, email, profilePicture, contactInfo } = req.body
-
-    // Check if user exists
-    const user = await User.findById(req.params.id)
+    const { name, email, profilePicture, contactInfo } = req.body;
+    const user = await User.findById(req.params.id);
 
     if (!user) {
-      return res.status(404).json({
-        success: false,
-        message: "User not found",
-      })
+      return ApiResponse.error(res, "User not found", 404);
     }
 
-    // Check permission - only allow users to update their own profile or admin
-    if (req.user.id !== req.params.id && req.user.role !== "Admin") {
-      return res.status(403).json({
-        success: false,
-        message: "Not authorized to update this user",
-      })
+    // Check permission - only allow users to update their own profile
+    if (req.userId.toString() !== req.params.id) {
+      return ApiResponse.error(res, "Not authorized to update this user", 403);
     }
 
     // Update fields
-    if (name) user.name = name
-    if (email) user.email = email
-    if (profilePicture !== undefined) user.profilePicture = profilePicture
-
-    // Update contactInfo if provided
+    if (name) user.name = name;
+    if (email) user.email = email;
+    if (profilePicture !== undefined) user.profilePicture = profilePicture;
     if (contactInfo) {
       user.contactInfo = {
         ...user.contactInfo,
         ...contactInfo,
-      }
+      };
     }
 
-    await user.save()
+    await user.save();
+    const updatedUser = await User.findById(req.params.id).select("-password");
 
-    // Return updated user
-    const updatedUser = await User.findById(req.params.id).select("-password")
-
-    res.status(200).json({
-      success: true,
-      data: {
-        user: updatedUser,
-      },
-    })
+    return ApiResponse.success(res, "User updated successfully", { user: updatedUser });
   } catch (error) {
-    console.error("Error in updateUser:", error)
-    res.status(500).json({
-      success: false,
-      message: "Error updating user",
-    })
+    logger.error(`Error in updateUser: ${error.message}`);
+    return ApiResponse.error(res, "Error updating user", 500);
   }
-}
+};
 
-// Delete user (admin only)
+// Delete user
 exports.deleteUser = async (req, res) => {
   try {
-    const user = await User.findById(req.params.id)
+    const user = await User.findById(req.params.id);
 
     if (!user) {
-      return res.status(404).json({
-        success: false,
-        message: "User not found",
-      })
+      return ApiResponse.error(res, "User not found", 404);
     }
 
-    await user.deleteOne()
+    // Only allow users to delete their own account
+    if (req.userId.toString() !== req.params.id) {
+      return ApiResponse.error(res, "Not authorized to delete this user", 403);
+    }
 
-    res.status(200).json({
-      success: true,
-      data: {},
-    })
+    await user.deleteOne();
+
+    return ApiResponse.success(res, "User deleted successfully");
   } catch (error) {
-    console.error("Error in deleteUser:", error)
-    res.status(500).json({
-      success: false,
-      message: "Error deleting user",
-    })
+    logger.error(`Error in deleteUser: ${error.message}`);
+    return ApiResponse.error(res, "Error deleting user", 500);
   }
-}
+};
 
-// Change user role (admin only)
+// Change user role
 exports.changeUserRole = async (req, res) => {
   try {
-    const { role } = req.body
-
-    // Validate role
-    const validRoles = ["Admin", "Project Manager", "Team Member"]
-    if (!validRoles.includes(role)) {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid role",
-      })
-    }
-
-    const user = await User.findById(req.params.id)
+    const { role } = req.body;
+    const user = await User.findById(req.params.id);
 
     if (!user) {
-      return res.status(404).json({
-        success: false,
-        message: "User not found",
-      })
+      return ApiResponse.error(res, "User not found", 404);
     }
 
-    user.role = role
-    await user.save()
+    // Only allow users to update their own role
+    if (req.userId.toString() !== req.params.id) {
+      return ApiResponse.error(res, "Not authorized to change this user's role", 403);
+    }
 
-    res.status(200).json({
-      success: true,
-      data: {
-        user: {
-          _id: user._id,
-          name: user.name,
-          email: user.email,
-          role: user.role,
-        },
+    // Validate role
+    const validRoles = ["member", "admin", "owner", "viewer"];
+    const standardizedRole = standardizeRole(role);
+    
+    if (!validRoles.includes(standardizedRole)) {
+      return ApiResponse.error(res, "Invalid role", 400);
+    }
+
+    user.role = standardizedRole;
+    await user.save();
+
+    return ApiResponse.success(res, "User role updated successfully", {
+      user: {
+        _id: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
       },
-    })
+    });
   } catch (error) {
-    console.error("Error in changeUserRole:", error)
-    res.status(500).json({
-      success: false,
-      message: "Error changing user role",
-    })
+    logger.error(`Error in changeUserRole: ${error.message}`);
+    return ApiResponse.error(res, "Error changing user role", 500);
   }
-}
+};
 
 // Change password
 exports.changePassword = async (req, res) => {

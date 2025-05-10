@@ -68,7 +68,16 @@ const taskSchema = new mongoose.Schema({
   updatedAt: {
     type: Date,
     default: Date.now
-  }
+  },
+  color: {
+    type: String,
+    default: '#2196F3',
+  },
+  leader: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    required: true,
+  },
 }, {
   timestamps: true,
   toJSON: { virtuals: true },

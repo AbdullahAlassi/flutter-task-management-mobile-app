@@ -7,11 +7,19 @@ import 'package:frontend/widgets/custom_button.dart';
 import 'package:frontend/widgets/custom_text_field.dart';
 import 'package:frontend/widgets/member_selection.dart';
 import 'package:frontend/core/models/attachment.dart';
+import 'package:flutter_colorpicker/flutter_colorpicker.dart';
 
 class CreateTaskScreen extends StatefulWidget {
   final String boardId;
+  final List<User> projectMembers;
+  final String projectId;
 
-  const CreateTaskScreen({super.key, required this.boardId});
+  const CreateTaskScreen({
+    super.key,
+    required this.boardId,
+    required this.projectMembers,
+    required this.projectId,
+  });
 
   @override
   State<CreateTaskScreen> createState() => _CreateTaskScreenState();
@@ -22,17 +30,17 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
   final _titleController = TextEditingController();
   final _descriptionController = TextEditingController();
   DateTime? _deadline;
-  String _status = 'To Do';
   String _priority = 'Medium';
   List<User> _selectedMembers = [];
   List<Attachment> _attachments = [];
+  Color _selectedColor = const Color(0xFF2196F3); // Default blue
+  User? _selectedLeader;
 
   bool _isLoading = false;
   String? _error;
 
   final TaskService _taskService = TaskService();
 
-  final List<String> _statuses = ['To Do', 'In Progress', 'In Review', 'Done'];
   final List<String> _priorities = ['Low', 'Medium', 'High', 'Urgent'];
 
   @override
@@ -42,6 +50,7 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
     final authProvider = Provider.of<AuthProvider>(context, listen: false);
     if (authProvider.user != null) {
       _selectedMembers = [authProvider.user!];
+      _selectedLeader = authProvider.user!;
     }
   }
 
@@ -55,42 +64,41 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
   void _addAttachment() {
     showDialog(
       context: context,
-      builder:
-          (context) => AlertDialog(
-            title: const Text('Add Attachment'),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TextField(
-                  decoration: const InputDecoration(
-                    labelText: 'Name',
-                    hintText: 'Enter attachment name',
-                  ),
-                  onSubmitted: (value) {
-                    if (value.trim().isNotEmpty) {
-                      setState(() {
-                        _attachments.add(
-                          Attachment(
-                            name: value.trim(),
-                            type: 'file', // Default type
-                            url: '', // URL will be set after file upload
-                            uploadedAt: DateTime.now(),
-                          ),
-                        );
-                      });
-                      Navigator.of(context).pop();
-                    }
-                  },
-                ),
-              ],
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(context).pop(),
-                child: const Text('Cancel'),
+      builder: (context) => AlertDialog(
+        title: const Text('Add Attachment'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              decoration: const InputDecoration(
+                labelText: 'Name',
+                hintText: 'Enter attachment name',
               ),
-            ],
+              onSubmitted: (value) {
+                if (value.trim().isNotEmpty) {
+                  setState(() {
+                    _attachments.add(
+                      Attachment(
+                        name: value.trim(),
+                        type: 'file', // Default type
+                        url: '', // URL will be set after file upload
+                        uploadedAt: DateTime.now(),
+                      ),
+                    );
+                  });
+                  Navigator.of(context).pop();
+                }
+              },
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancel'),
           ),
+        ],
+      ),
     );
   }
 
@@ -109,12 +117,14 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
           'title': _titleController.text.trim(),
           'description': _descriptionController.text.trim(),
           'board': widget.boardId,
+          'projectId': widget.projectId,
           'deadline': _deadline?.toIso8601String(),
-          'status': _status,
           'priority': _priority,
           'assignees': _selectedMembers.map((member) => member.id).toList(),
           'attachments':
               _attachments.map((attachment) => attachment.toJson()).toList(),
+          'color': '#${_selectedColor.value.toRadixString(16).substring(2)}',
+          'leader': _selectedLeader?.id,
         };
 
         await _taskService.createTask(token, taskData);
@@ -146,6 +156,35 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
         _deadline = picked;
       });
     }
+  }
+
+  void _showColorPicker() {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('Pick a color for the task'),
+          content: SingleChildScrollView(
+            child: BlockPicker(
+              pickerColor: _selectedColor,
+              onColorChanged: (Color color) {
+                setState(() {
+                  _selectedColor = color;
+                });
+              },
+            ),
+          ),
+          actions: <Widget>[
+            TextButton(
+              child: const Text('Done'),
+              onPressed: () {
+                Navigator.of(context).pop();
+              },
+            ),
+          ],
+        );
+      },
+    );
   }
 
   @override
@@ -224,42 +263,6 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'Status',
-                        style: Theme.of(context).textTheme.titleMedium,
-                      ),
-                      const SizedBox(height: 8),
-                      DropdownButtonFormField<String>(
-                        value: _status,
-                        decoration: const InputDecoration(
-                          border: OutlineInputBorder(),
-                        ),
-                        items:
-                            _statuses.map((status) {
-                              return DropdownMenuItem(
-                                value: status,
-                                child: Text(status),
-                              );
-                            }).toList(),
-                        onChanged: (value) {
-                          if (value != null) {
-                            setState(() {
-                              _status = value;
-                            });
-                          }
-                        },
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              const SizedBox(height: 16),
-              Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
                         'Priority',
                         style: Theme.of(context).textTheme.titleMedium,
                       ),
@@ -269,13 +272,12 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
                         decoration: const InputDecoration(
                           border: OutlineInputBorder(),
                         ),
-                        items:
-                            _priorities.map((priority) {
-                              return DropdownMenuItem(
-                                value: priority,
-                                child: Text(priority),
-                              );
-                            }).toList(),
+                        items: _priorities.map((priority) {
+                          return DropdownMenuItem(
+                            value: priority,
+                            child: Text(priority),
+                          );
+                        }).toList(),
                         onChanged: (value) {
                           if (value != null) {
                             setState(() {
@@ -299,6 +301,47 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
                         _selectedMembers = members;
                       });
                     },
+                    availableMembers: widget.projectMembers,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Task Leader',
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
+                      const SizedBox(height: 8),
+                      DropdownButtonFormField<User>(
+                        value: _selectedLeader,
+                        items: _selectedMembers.map((user) {
+                          return DropdownMenuItem<User>(
+                            value: user,
+                            child: Text(user.name),
+                          );
+                        }).toList(),
+                        onChanged: (user) {
+                          setState(() {
+                            _selectedLeader = user;
+                          });
+                        },
+                        decoration: const InputDecoration(
+                          border: OutlineInputBorder(),
+                          labelText: 'Select Leader',
+                        ),
+                        validator: (value) {
+                          if (value == null) {
+                            return 'Please select a leader';
+                          }
+                          return null;
+                        },
+                      ),
+                    ],
                   ),
                 ),
               ),
@@ -344,6 +387,41 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
                             );
                           },
                         ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Task Color',
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          Container(
+                            width: 40,
+                            height: 40,
+                            decoration: BoxDecoration(
+                              color: _selectedColor,
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: Colors.grey),
+                            ),
+                          ),
+                          const SizedBox(width: 16),
+                          ElevatedButton.icon(
+                            onPressed: _showColorPicker,
+                            icon: const Icon(Icons.color_lens),
+                            label: const Text('Choose Color'),
+                          ),
+                        ],
+                      ),
                     ],
                   ),
                 ),

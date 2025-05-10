@@ -4,6 +4,7 @@ const boardService = require("../services/board.service")
 const projectService = require("../services/project.service")
 const ApiResponse = require("../utils/apiResponse")
 const logger = require("../utils/logger")
+const { standardizeRole } = require("../utils/permissions")
 
 class TaskController {
   /**
@@ -29,34 +30,49 @@ class TaskController {
   async getTasksByBoard(req, res) {
     try {
       const { boardId } = req.params
+      logger.info(`Getting tasks for board: ${boardId}`)
 
       // Get board to check permissions
       const board = await boardService.getBoardById(boardId)
       if (!board) {
+        logger.warn(`Board not found: ${boardId}`)
         return ApiResponse.error(res, "Board not found", 404)
       }
 
       // Get project to check permissions
       const project = await projectService.getProjectById(board.project)
+      if (!project) {
+        logger.warn(`Project not found for board: ${boardId}`)
+        return ApiResponse.error(res, "Project not found", 404)
+      }
 
       // Check if the user is authorized
-      const isAdmin = req.userRole === "Admin"
+      const userRole = standardizeRole(req.userRole || '')
+      const isOwner = userRole === "owner"
+      const isAdmin = userRole === "admin"
       const isManager = project.manager.toString() === req.userId.toString()
-      const isMember = project.members.some((member) => member.toString() === req.userId.toString())
+      const isProjectMember = project.members.some((member) => {
+        const memberId = member.userId ? member.userId.toString() : member.toString()
+        const memberRole = member.role ? standardizeRole(member.role) : 'viewer'
+        return memberId === req.userId.toString() && (memberRole === 'admin' || memberRole === 'owner' || memberRole === 'member' || memberRole === 'viewer')
+      })
 
-      if (!isAdmin && !isManager && !isMember) {
+      logger.info(`User authorization check - isOwner: ${isOwner}, isAdmin: ${isAdmin}, isManager: ${isManager}, isProjectMember: ${isProjectMember}, userRole: ${userRole}`)
+
+      if (!isOwner && !isAdmin && !isManager && !isProjectMember) {
+        logger.warn(`Unauthorized access attempt to board: ${boardId} by user: ${req.userId}`)
         return ApiResponse.error(res, "Unauthorized to view tasks in this board", 403)
       }
 
       const tasks = await taskService.getTasksByBoard(boardId)
+      logger.info(`Successfully retrieved ${tasks.length} tasks for board: ${boardId}`)
       return ApiResponse.success(res, "Tasks retrieved successfully", { tasks })
     } catch (error) {
-      logger.error(`Error getting tasks by board: ${error.message}`)
-      return ApiResponse.error(
-        res,
-        error.message === "Board not found" ? "Board not found" : "Error retrieving tasks",
-        error.message === "Board not found" ? 404 : 500,
-      )
+      logger.error(`Error getting tasks by board: ${error.message}`, {
+        boardId: req.params.boardId,
+        error: error.stack
+      })
+      return ApiResponse.error(res, error.message || "Error getting tasks", 500)
     }
   }
 
@@ -76,23 +92,38 @@ class TaskController {
 
       // Get board to check permissions
       const board = await boardService.getBoardById(task.board)
+      if (!board) {
+        return ApiResponse.error(res, "Board not found", 404)
+      }
 
       // Get project to check permissions
       const project = await projectService.getProjectById(board.project)
+      if (!project) {
+        return ApiResponse.error(res, "Project not found", 404)
+      }
 
       // Check if the user is authorized
-      const isAdmin = req.userRole === "Admin"
-      const isManager = project.manager.toString() === req.userId.toString()
-      const isMember = project.members.some((member) => member.toString() === req.userId.toString())
-      const isAssignee = task.assignees.some((assignee) => assignee.toString() === req.userId.toString())
+      const isAdmin = req.userRole?.toLowerCase() === "admin" || req.userRole === "Admin"
+      const isManager = project.manager?.toString() === req.userId?.toString()
+      const isProjectMember = project.members?.some((member) => {
+        const memberId = member.userId ? member.userId.toString() : member.toString()
+        const memberRole = member.role ? member.role.toLowerCase() : ''
+        return memberId === req.userId?.toString() && (memberRole === 'admin' || memberRole === 'owner' || memberRole === 'member')
+      }) || false
+      const isAssignee = task.assignees?.some((assignee) => assignee?.toString() === req.userId?.toString()) || false
 
-      if (!isAdmin && !isManager && !isMember && !isAssignee) {
+      if (!isAdmin && !isManager && !isProjectMember && !isAssignee) {
         return ApiResponse.error(res, "Unauthorized to view this task", 403)
       }
 
       return ApiResponse.success(res, "Task retrieved successfully", { task })
     } catch (error) {
-      logger.error(`Error getting task by ID: ${error.message}`)
+      logger.error(`Error getting task by ID: ${error.message}`, {
+        taskId: req.params.taskId,
+        userId: req.userId,
+        userRole: req.userRole,
+        error: error.stack
+      })
       return ApiResponse.error(
         res,
         error.message === "Task not found" ? "Task not found" : "Error retrieving task",
@@ -108,7 +139,7 @@ class TaskController {
    */
   async createTask(req, res) {
     try {
-      const { board } = req.body
+      const { board, color, leader } = req.body
 
       // Get board to check permissions
       const boardDoc = await boardService.getBoardById(board)
@@ -120,15 +151,20 @@ class TaskController {
       const project = await projectService.getProjectById(boardDoc.project)
 
       // Check if the user is authorized
-      const isAdmin = req.userRole === "Admin"
+      const isAdmin = req.userRole.toLowerCase() === "admin" || req.userRole === "Admin"
       const isManager = project.manager.toString() === req.userId.toString()
-      const isMember = project.members.some((member) => member.toString() === req.userId.toString())
+      const isProjectMember = project.members.some((member) => {
+        const memberId = member.userId ? member.userId.toString() : member.toString()
+        const memberRole = member.role ? member.role.toLowerCase() : ''
+        return memberId === req.userId.toString() && (memberRole === 'admin' || memberRole === 'owner' || memberRole === 'member')
+      })
 
-      if (!isAdmin && !isManager && !isMember) {
+      if (!isAdmin && !isManager && !isProjectMember) {
         return ApiResponse.error(res, "Unauthorized to create task in this board", 403)
       }
 
-      const task = await taskService.createTask(req.body, req.userId)
+      const leaderId = leader || req.user._id;
+      const task = await taskService.createTask({ ...req.body, color, leader: leaderId }, req.userId)
       return ApiResponse.success(res, "Task created successfully", { task }, 201)
     } catch (error) {
       logger.error(`Error creating task: ${error.message}`)
@@ -157,33 +193,63 @@ class TaskController {
 
       // Get board to check permissions
       const board = await boardService.getBoardById(task.board)
+      if (!board) {
+        return ApiResponse.error(res, "Board not found", 404)
+      }
 
       // Get project to check permissions
       const project = await projectService.getProjectById(board.project)
+      if (!project) {
+        return ApiResponse.error(res, "Project not found", 404)
+      }
 
       // Check if the user is authorized
-      const isAdmin = req.userRole === "Admin"
-      const isManager = project.manager.toString() === req.userId.toString()
-      const isMember = project.members.some((member) => member.toString() === req.userId.toString())
-      const isAssignee = task.assignees.some((assignee) => assignee.toString() === req.userId.toString())
+      const userRole = req.userRole ? req.userRole.toLowerCase() : ''
+      const isAdmin = userRole === "admin"
+      const isManager = project.manager?.toString() === req.userId?.toString()
+      const isProjectMember = project.members?.some((member) => {
+        const memberId = member.userId ? member.userId.toString() : member.toString()
+        const memberRole = member.role ? member.role.toLowerCase() : ''
+        return memberId === req.userId?.toString() && (memberRole === 'admin' || memberRole === 'owner' || memberRole === 'member')
+      }) || false
+      const isAssignee = task.assignees?.some((assignee) => assignee?.toString() === req.userId?.toString()) || false
+      const isTaskLeader = task.leader?.toString() === req.userId?.toString()
 
-      if (!isAdmin && !isManager && !isMember && !isAssignee) {
+      logger.debug('Permission check details:', {
+        userId: req.userId,
+        userRole: userRole,
+        isAdmin,
+        isManager,
+        isProjectMember,
+        isAssignee,
+        isTaskLeader,
+        taskId,
+        boardId: task.board
+      })
+
+      if (!isAdmin && !isManager && !isProjectMember && !isAssignee && !isTaskLeader) {
+        logger.warn(`Unauthorized attempt to update task: ${taskId} by user: ${req.userId}`)
         return ApiResponse.error(res, "Unauthorized to update this task", 403)
       }
 
       // Inside the updateTask method, before updating the task
-      console.log("Updating task with data:", req.body)
-      console.log("Current assignees:", task.assignees)
-      console.log("New assignees:", req.body.assignees)
+      logger.debug("Updating task with data:", req.body)
+      logger.debug("Current assignees:", task.assignees)
+      logger.debug("New assignees:", req.body.assignees)
 
       const updatedTask = await taskService.updateTask(taskId, req.body, req.userId)
 
       // After updating the task
-      console.log("Updated task:", updatedTask)
+      logger.debug("Updated task:", updatedTask)
 
       return ApiResponse.success(res, "Task updated successfully", { task: updatedTask })
     } catch (error) {
-      logger.error(`Error updating task: ${error.message}`)
+      logger.error(`Error updating task: ${error.message}`, {
+        taskId: req.params.taskId,
+        userId: req.userId,
+        userRole: req.userRole,
+        error: error.stack
+      })
       return ApiResponse.error(
         res,
         error.message === "Task not found" ? "Task not found" : "Error updating task",
@@ -214,10 +280,15 @@ class TaskController {
       const project = await projectService.getProjectById(board.project)
 
       // Check if the user is authorized
-      const isAdmin = req.userRole === "Admin"
+      const isAdmin = req.userRole.toLowerCase() === "admin" || req.userRole === "Admin"
       const isManager = project.manager.toString() === req.userId.toString()
+      const isProjectMember = project.members.some((member) => {
+        const memberId = member.userId ? member.userId.toString() : member.toString()
+        const memberRole = member.role ? member.role.toLowerCase() : ''
+        return memberId === req.userId.toString() && (memberRole === 'admin' || memberRole === 'owner' || memberRole === 'member')
+      })
 
-      if (!isAdmin && !isManager) {
+      if (!isAdmin && !isManager && !isProjectMember) {
         return ApiResponse.error(res, "Unauthorized to delete this task", 403)
       }
 
@@ -271,24 +342,71 @@ class TaskController {
         return ApiResponse.error(res, "Cannot move task to a board in a different project", 400)
       }
 
-      // Check if the user is authorized
-      const isAdmin = req.userRole === "Admin"
-      const isManager = sourceProject.manager.toString() === req.userId.toString()
-      const isMember = sourceProject.members.some((member) => member.toString() === req.userId.toString())
+      // Add projectId to request body for projectMiddleware
+      req.body.projectId = sourceBoard.project.toString()
 
-      if (!isAdmin && !isManager && !isMember) {
+      // Debug logs for permission checks
+      logger.debug('Permission check details:', {
+        userId: req.userId,
+        userRole: req.userRole,
+        rawUserRole: req.userRole,
+        taskLeader: task.leader,
+        projectManager: sourceProject.manager,
+        isManager: sourceProject.manager._id ? 
+          sourceProject.manager._id.toString() === req.userId.toString() : 
+          sourceProject.manager.toString() === req.userId.toString(),
+        projectId: sourceBoard.project.toString()
+      })
+
+      // Check if the user is authorized
+      const userRole = standardizeRole(req.userRole || '')
+      const isOwner = userRole === "owner"
+      const isAdmin = userRole === "admin"
+      const isManager = sourceProject.manager._id ? 
+        sourceProject.manager._id.toString() === req.userId.toString() : 
+        sourceProject.manager.toString() === req.userId.toString()
+      const isTaskLeader = task.leader._id ? 
+        task.leader._id.toString() === req.userId.toString() : 
+        task.leader.toString() === req.userId.toString()
+
+      logger.debug('Authorization check results:', {
+        isOwner,
+        isAdmin,
+        isManager,
+        isTaskLeader,
+        userRole,
+        userId: req.userId,
+        projectManager: sourceProject.manager,
+        projectId: sourceBoard.project.toString(),
+        rawUserRole: req.userRole,
+        standardizedRole: userRole
+      })
+
+      // Project owners, admins, and managers can move any task
+      // Task leaders can move their own tasks
+      if (!isOwner && !isAdmin && !isManager && !isTaskLeader) {
+        logger.warn(`Unauthorized attempt to move task: ${taskId} by user: ${req.userId}`, {
+          userRole,
+          isOwner,
+          isAdmin,
+          isManager,
+          isTaskLeader,
+          projectId: sourceBoard.project.toString(),
+          rawUserRole: req.userRole,
+          standardizedRole: userRole
+        })
         return ApiResponse.error(res, "Unauthorized to move this task", 403)
       }
 
-      const movedTask = await taskService.moveTask(taskId, targetBoard, req.userId)
-      return ApiResponse.success(res, "Task moved successfully", { task: movedTask })
+      const updatedTask = await taskService.moveTask(taskId, targetBoard, req.userId)
+      return ApiResponse.success(res, "Task moved successfully", { task: updatedTask })
     } catch (error) {
-      logger.error(`Error moving task: ${error.message}`)
-      return ApiResponse.error(
-        res,
-        error.message === "Task not found" ? "Task not found" : "Error moving task",
-        error.message === "Task not found" ? 404 : 500,
-      )
+      logger.error(`Error moving task: ${error.message}`, {
+        taskId: req.params.taskId,
+        targetBoard: req.body.targetBoard,
+        error: error.stack
+      })
+      return ApiResponse.error(res, error.message || "Error moving task", 500)
     }
   }
 
@@ -316,7 +434,7 @@ class TaskController {
       const project = await projectService.getProjectById(board.project)
 
       // Check if the user is authorized
-      const isAdmin = req.userRole === "Admin"
+      const isAdmin = req.userRole.toLowerCase() === "admin" || req.userRole === "Admin"
       const isManager = project.manager.toString() === req.userId.toString()
       const isMember = project.members.some((member) => member.toString() === req.userId.toString())
 
@@ -352,7 +470,7 @@ class TaskController {
       }
 
       // Check if the user is authorized
-      const isAdmin = req.userRole === "Admin"
+      const isAdmin = req.userRole.toLowerCase() === "admin" || req.userRole === "Admin"
       const isManager = project.manager.toString() === req.userId.toString()
       const isMember = project.members.some((member) => member.toString() === req.userId.toString())
 

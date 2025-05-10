@@ -15,14 +15,35 @@ class SubtaskService {
    */
   async createSubtask(taskId, subtaskData, userId) {
     try {
+      console.log('[DEBUG] createSubtask called with:', { taskId, subtaskData, userId });
       // Check if task exists
       const task = await Task.findById(taskId)
       if (!task) {
+        console.error('[DEBUG] Task not found for taskId:', taskId);
         throw new Error("Task not found")
+      }
+
+      // Check if subtask deadline is before task deadline
+      if (subtaskData.deadline && task.deadline) {
+        const subtaskDeadline = new Date(subtaskData.deadline);
+        const taskDeadline = new Date(task.deadline);
+        if (subtaskDeadline < taskDeadline) {
+          console.log('[DEBUG] Subtask deadline validation passed:', {
+            subtaskDeadline,
+            taskDeadline
+          });
+        } else {
+          console.error('[DEBUG] Subtask deadline validation failed:', {
+            subtaskDeadline,
+            taskDeadline
+          });
+          throw new Error('Subtask deadline must be before the parent task deadline');
+        }
       }
 
       // Get the highest order value for existing subtasks in this task
       const highestOrderSubtask = await Subtask.findOne({ task: taskId }).sort({ order: -1 })
+      console.log('[DEBUG] highestOrderSubtask:', highestOrderSubtask);
 
       const order = highestOrderSubtask ? highestOrderSubtask.order + 1 : 0
 
@@ -31,14 +52,18 @@ class SubtaskService {
         ...subtaskData,
         task: taskId,
         order,
+        deadline: subtaskData.deadline ? new Date(subtaskData.deadline) : null,
         assignees: subtaskData.assignees || [] // Initialize assignees array
       })
+      console.log('[DEBUG] New subtask to save:', subtask);
 
       await subtask.save()
+      console.log('[DEBUG] Subtask saved:', subtask);
 
       // Add the subtask to the task's subtasks array
       task.subtasks.push(subtask._id)
       await task.save()
+      console.log('[DEBUG] Subtask ID added to task:', task.subtasks);
 
       // Create activity log
       await ActivityLog.create({
@@ -50,21 +75,34 @@ class SubtaskService {
           itemType: "Subtask",
         },
       })
+      console.log('[DEBUG] Activity log created for subtask');
 
       // Create notifications for assignees if any
       if (subtask.assignees && subtask.assignees.length > 0) {
-        await notificationService.createSubtaskAssignmentNotification(
-          subtask._id,
-          subtask.title,
-          task._id,
-          task.title,
-          userId,
-          subtask.assignees
-        )
+        try {
+          await notificationService.createSubtaskAssignmentNotification(
+            subtask._id,
+            subtask.title,
+            task._id,
+            task.title,
+            userId,
+            subtask.assignees
+          )
+          console.log('[DEBUG] Notifications created for subtask assignees');
+        } catch (notifError) {
+          console.error('[DEBUG] Notification error:', notifError);
+          // Do not throw, just log
+        }
       }
 
-      return subtask
+      // Populate the subtask before returning
+      const populatedSubtask = await Subtask.findById(subtask._id)
+        .populate('assignees', 'name email profilePicture')
+        .lean();
+
+      return populatedSubtask;
     } catch (error) {
+      console.error('[DEBUG] Error in createSubtask:', error);
       logger.error(`Error creating subtask: ${error.message}`)
       throw error
     }

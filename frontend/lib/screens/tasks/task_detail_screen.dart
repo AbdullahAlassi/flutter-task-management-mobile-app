@@ -36,17 +36,16 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
     _task = widget.task;
     _loadSubtasks();
     // Use the actual attachments from the task instead of hardcoded example
-    _attachments =
-        _task.attachments
-            .map(
-              (attachment) => {
-                'name': attachment.name,
-                'type': attachment.type,
-                'url': attachment.url,
-                'uploadedAt': attachment.uploadedAt.toIso8601String(),
-              },
-            )
-            .toList();
+    _attachments = _task.attachments
+        .map(
+          (attachment) => {
+            'name': attachment.name,
+            'type': attachment.type,
+            'url': attachment.url,
+            'uploadedAt': attachment.uploadedAt.toIso8601String(),
+          },
+        )
+        .toList();
   }
 
   Future<void> _loadSubtasks() async {
@@ -257,10 +256,9 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
                   // Results list
                   Expanded(
                     child: FutureBuilder<List<User>>(
-                      future:
-                          searchController.text.isEmpty
-                              ? Future.value([])
-                              : _searchUsers(searchController.text),
+                      future: searchController.text.isEmpty
+                          ? Future.value([])
+                          : _searchUsers(searchController.text),
                       builder: (context, snapshot) {
                         if (snapshot.connectionState ==
                             ConnectionState.waiting) {
@@ -389,17 +387,16 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
         if (mounted) {
           setState(() {
             _task = updatedTask;
-            _attachments =
-                updatedTask.attachments
-                    .map(
-                      (a) => {
-                        'name': a.name,
-                        'type': a.type,
-                        'url': a.url,
-                        'uploadedAt': a.uploadedAt.toIso8601String(),
-                      },
-                    )
-                    .toList();
+            _attachments = updatedTask.attachments
+                .map(
+                  (a) => {
+                    'name': a.name,
+                    'type': a.type,
+                    'url': a.url,
+                    'uploadedAt': a.uploadedAt.toIso8601String(),
+                  },
+                )
+                .toList();
             _isLoading = false;
           });
 
@@ -506,183 +503,171 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
           Wrap(
             spacing: 8,
             runSpacing: 8,
-            children:
-                _attachments.map((attachment) {
-                  // Check if it's an image by looking at the type string
-                  final isImage =
-                      attachment['type']?.toString().toLowerCase().startsWith(
-                        'image',
-                      ) ??
+            children: _attachments.map((attachment) {
+              // Check if it's an image by looking at the type string
+              final isImage =
+                  attachment['type']?.toString().toLowerCase().startsWith(
+                            'image',
+                          ) ??
                       false;
 
-                  return InkWell(
-                    onTap: () {
-                      String url = attachment['url'] ?? '';
-                      // Convert local file path to file:// URL if it's a local path
-                      if (url.startsWith('/') || url.contains(':\\')) {
-                        url = 'file://$url';
-                      }
+              return InkWell(
+                onTap: () {
+                  String url = attachment['url'] ?? '';
+                  // Convert local file path to file:// URL if it's a local path
+                  if (url.startsWith('/') || url.contains(':\\')) {
+                    url = 'file://$url';
+                  }
 
-                      Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder:
-                              (_) => AttachmentPreviewScreen(
-                                attachmentUrl: url,
-                                fileName: attachment['name'] ?? 'Unknown file',
-                                fileType:
-                                    attachment['type'] ??
-                                    'application/octet-stream',
-                                onDelete: () async {
-                                  try {
-                                    final authProvider =
-                                        Provider.of<AuthProvider>(
-                                          context,
-                                          listen: false,
-                                        );
-                                    if (authProvider.token == null) {
-                                      throw Exception(
-                                        'Authentication token is missing',
-                                      );
-                                    }
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => AttachmentPreviewScreen(
+                        attachmentUrl: url,
+                        fileName: attachment['name'] ?? 'Unknown file',
+                        fileType:
+                            attachment['type'] ?? 'application/octet-stream',
+                        onDelete: () async {
+                          try {
+                            final authProvider = Provider.of<AuthProvider>(
+                              context,
+                              listen: false,
+                            );
+                            if (authProvider.token == null) {
+                              throw Exception(
+                                'Authentication token is missing',
+                              );
+                            }
 
-                                    // Create a new list without the deleted attachment
-                                    final updatedAttachments =
-                                        _task.attachments
-                                            .where(
-                                              (a) =>
-                                                  a.url != attachment['url'] &&
-                                                  a.name != attachment['name'],
-                                            )
-                                            .toList();
+                            // Create a new list without the deleted attachment
+                            final updatedAttachments = _task.attachments
+                                .where(
+                                  (a) =>
+                                      a.url != attachment['url'] &&
+                                      a.name != attachment['name'],
+                                )
+                                .toList();
 
-                                    // Update the task with the new attachments list
-                                    final updatedTask = await _taskService
-                                        .updateTask(
-                                          authProvider.token!,
-                                          _task.id,
-                                          {
-                                            'attachments':
-                                                updatedAttachments
-                                                    .map((a) => a.toJson())
-                                                    .toList(),
-                                          },
-                                        );
+                            // Update the task with the new attachments list
+                            final updatedTask = await _taskService.updateTask(
+                              authProvider.token!,
+                              _task.id,
+                              {
+                                'attachments': updatedAttachments
+                                    .map((a) => a.toJson())
+                                    .toList(),
+                              },
+                            );
 
-                                    // Update both the task and the local attachments list
-                                    if (mounted) {
-                                      setState(() {
-                                        _task = updatedTask;
-                                        _attachments =
-                                            _attachments
-                                                .where(
-                                                  (a) =>
-                                                      a['url'] !=
-                                                          attachment['url'] &&
-                                                      a['name'] !=
-                                                          attachment['name'],
-                                                )
-                                                .toList();
-                                      });
-                                    }
+                            // Update both the task and the local attachments list
+                            if (mounted) {
+                              setState(() {
+                                _task = updatedTask;
+                                _attachments = _attachments
+                                    .where(
+                                      (a) =>
+                                          a['url'] != attachment['url'] &&
+                                          a['name'] != attachment['name'],
+                                    )
+                                    .toList();
+                              });
+                            }
 
-                                    if (mounted) {
-                                      ScaffoldMessenger.of(
-                                        context,
-                                      ).showSnackBar(
-                                        const SnackBar(
-                                          content: Text(
-                                            'Attachment deleted successfully',
-                                          ),
-                                        ),
-                                      );
-                                    }
-                                  } catch (e) {
-                                    if (mounted) {
-                                      ScaffoldMessenger.of(
-                                        context,
-                                      ).showSnackBar(
-                                        SnackBar(
-                                          content: Text(
-                                            'Error deleting attachment: $e',
-                                          ),
-                                        ),
-                                      );
-                                    }
-                                  }
-                                },
-                              ),
-                        ),
-                      );
-                    },
-                    child: Container(
-                      width: 100,
-                      height: 100,
-                      decoration: BoxDecoration(
-                        color: Colors.grey[200],
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child:
-                          isImage
-                              ? ClipRRect(
-                                borderRadius: BorderRadius.circular(8),
-                                child: Image.network(
-                                  attachment['url'] ?? '',
-                                  fit: BoxFit.cover,
-                                  errorBuilder: (context, error, stackTrace) {
-                                    print('Error loading image: $error');
-                                    return Center(
-                                      child: Column(
-                                        mainAxisAlignment:
-                                            MainAxisAlignment.center,
-                                        children: [
-                                          Icon(
-                                            Icons.broken_image,
-                                            color: Colors.grey[600],
-                                          ),
-                                          const SizedBox(height: 4),
-                                          Text(
-                                            'Error loading image',
-                                            style: TextStyle(
-                                              fontSize: 10,
-                                              color: Colors.grey[600],
-                                            ),
-                                            textAlign: TextAlign.center,
-                                          ),
-                                        ],
-                                      ),
-                                    );
-                                  },
+                            if (mounted) {
+                              ScaffoldMessenger.of(
+                                context,
+                              ).showSnackBar(
+                                const SnackBar(
+                                  content: Text(
+                                    'Attachment deleted successfully',
+                                  ),
                                 ),
-                              )
-                              : Column(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Icon(
-                                    _getFileIcon(attachment['type']),
-                                    size: 32,
-                                    color: Colors.grey[600],
+                              );
+                            }
+                          } catch (e) {
+                            if (mounted) {
+                              ScaffoldMessenger.of(
+                                context,
+                              ).showSnackBar(
+                                SnackBar(
+                                  content: Text(
+                                    'Error deleting attachment: $e',
                                   ),
-                                  const SizedBox(height: 4),
-                                  Padding(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 4,
-                                    ),
-                                    child: Text(
-                                      attachment['name'] ?? 'Unknown file',
-                                      style: TextStyle(
-                                        fontSize: 12,
-                                        color: Colors.grey[600],
-                                      ),
-                                      maxLines: 2,
-                                      overflow: TextOverflow.ellipsis,
-                                      textAlign: TextAlign.center,
-                                    ),
-                                  ),
-                                ],
-                              ),
+                                ),
+                              );
+                            }
+                          }
+                        },
+                      ),
                     ),
                   );
-                }).toList(),
+                },
+                child: Container(
+                  width: 100,
+                  height: 100,
+                  decoration: BoxDecoration(
+                    color: Colors.grey[200],
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: isImage
+                      ? ClipRRect(
+                          borderRadius: BorderRadius.circular(8),
+                          child: Image.network(
+                            attachment['url'] ?? '',
+                            fit: BoxFit.cover,
+                            errorBuilder: (context, error, stackTrace) {
+                              print('Error loading image: $error');
+                              return Center(
+                                child: Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Icon(
+                                      Icons.broken_image,
+                                      color: Colors.grey[600],
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      'Error loading image',
+                                      style: TextStyle(
+                                        fontSize: 10,
+                                        color: Colors.grey[600],
+                                      ),
+                                      textAlign: TextAlign.center,
+                                    ),
+                                  ],
+                                ),
+                              );
+                            },
+                          ),
+                        )
+                      : Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              _getFileIcon(attachment['type']),
+                              size: 32,
+                              color: Colors.grey[600],
+                            ),
+                            const SizedBox(height: 4),
+                            Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 4,
+                              ),
+                              child: Text(
+                                attachment['name'] ?? 'Unknown file',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: Colors.grey[600],
+                                ),
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                textAlign: TextAlign.center,
+                              ),
+                            ),
+                          ],
+                        ),
+                ),
+              );
+            }).toList(),
           ),
       ],
     );
@@ -735,35 +720,33 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
 
     await showDialog(
       context: context,
-      builder:
-          (context) => AlertDialog(
-            title: const Text('Update Task Status'),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              children:
-                  statuses.map((status) {
-                    return RadioListTile<String>(
-                      title: Text(status),
-                      value: status,
-                      groupValue: _task.status,
-                      onChanged: (value) async {
-                        if (value != null) {
-                          await _updateTaskStatus(value);
-                          if (mounted) {
-                            Navigator.of(context).pop();
-                          }
-                        }
-                      },
-                    );
-                  }).toList(),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(context).pop(),
-                child: const Text('Cancel'),
-              ),
-            ],
+      builder: (context) => AlertDialog(
+        title: const Text('Update Task Status'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: statuses.map((status) {
+            return RadioListTile<String>(
+              title: Text(status),
+              value: status,
+              groupValue: _task.status,
+              onChanged: (value) async {
+                if (value != null) {
+                  await _updateTaskStatus(value);
+                  if (mounted) {
+                    Navigator.of(context).pop();
+                  }
+                }
+              },
+            );
+          }).toList(),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancel'),
           ),
+        ],
+      ),
     );
   }
 
@@ -786,92 +769,98 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
             fontSize: 24,
           ),
         ),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.edit),
-            onPressed: _showStatusEditDialog,
-          ),
-        ],
       ),
-      body:
-          _isLoading
-              ? const Center(child: CircularProgressIndicator())
-              : SingleChildScrollView(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // Colorful gradient banner
-                    _buildGradientBanner(),
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : SingleChildScrollView(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Colorful gradient banner
+                  _buildGradientBanner(),
 
-                    const SizedBox(height: 16),
+                  const SizedBox(height: 16),
 
-                    // Task description
-                    Text(
-                      _task.description ??
-                          'Discussion and looking for project references.',
-                      style: TextStyle(fontSize: 16, color: Colors.grey[800]),
-                    ),
+                  // Task description
+                  Text(
+                    _task.description ??
+                        'Discussion and looking for project references.',
+                    style: TextStyle(fontSize: 16, color: Colors.grey[800]),
+                  ),
 
-                    const SizedBox(height: 24),
+                  const SizedBox(height: 24),
 
-                    // Team section
-                    _buildInfoRow(
-                      icon: Icons.people_outline,
-                      title: 'Team',
-                      child: _buildTeamMembers(_task.assignees),
-                    ),
+                  // Team section
+                  _buildInfoRow(
+                    icon: Icons.people_outline,
+                    title: 'Team',
+                    child: _buildTeamMembers(_task.assignees),
+                  ),
 
-                    const SizedBox(height: 16),
+                  const SizedBox(height: 16),
 
-                    // Leader section
-                    _buildInfoRow(
-                      icon: Icons.person_outline,
-                      title: 'Leader',
-                      child: _buildLeader(),
-                    ),
+                  // Leader section
+                  _buildInfoRow(
+                    icon: Icons.person_outline,
+                    title: 'Leader',
+                    child: _buildLeader(),
+                  ),
 
-                    const SizedBox(height: 16),
+                  const SizedBox(height: 16),
 
-                    // Status section
-                    _buildInfoRow(
-                      icon: Icons.check_circle_outline,
-                      title: 'Status',
-                      child: _buildStatusSelector(),
-                    ),
+                  // Status section
+                  _buildInfoRow(
+                    icon: Icons.check_circle_outline,
+                    title: 'Status',
+                    child: _buildStatusSelector(),
+                  ),
 
-                    const SizedBox(height: 16),
+                  const SizedBox(height: 16),
 
-                    // Due Date section
-                    _buildInfoRow(
-                      icon: Icons.calendar_today_outlined,
-                      title: 'Due Date',
-                      child: _buildDueDate(),
-                    ),
+                  // Due Date section
+                  _buildInfoRow(
+                    icon: Icons.calendar_today_outlined,
+                    title: 'Due Date',
+                    child: _buildDueDate(),
+                  ),
 
-                    const SizedBox(height: 16),
+                  const SizedBox(height: 16),
 
-                    // Attachment section
-                    _buildAttachmentsSection(),
+                  // Attachment section
+                  _buildAttachmentsSection(),
 
-                    const SizedBox(height: 24),
+                  const SizedBox(height: 24),
 
-                    // Sub-Tasks section
-                    _buildSubTasksSection(),
+                  // Sub-Tasks section
+                  _buildSubTasksSection(),
 
-                    const SizedBox(height: 16),
+                  const SizedBox(height: 16),
 
-                    // Add New Sub-Task button
-                    _buildAddSubTaskButton(),
+                  // Add New Sub-Task button
+                  _buildAddSubTaskButton(),
 
-                    const SizedBox(height: 24),
-                  ],
-                ),
+                  const SizedBox(height: 24),
+                ],
               ),
+            ),
     );
   }
 
+  // Add a placeholder for the parent project color
+  Color get _taskProjectColor => Colors
+      .blue; // TODO: Replace with actual project color from parent project
+
   Widget _buildGradientBanner() {
+    // Parse the task color
+    Color taskColor;
+    try {
+      taskColor = Color(int.parse(_task.color.replaceAll('#', '0xFF')));
+    } catch (e) {
+      taskColor = Colors.blue;
+    }
+    // Use the parent project color (replace with actual value if available)
+    final projectColor = _taskProjectColor;
     return Stack(
       children: [
         Container(
@@ -882,10 +871,8 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
               colors: [
-                Colors.blue.shade300,
-                Colors.purple.shade500,
-                Colors.pink.shade400,
-                Colors.red.shade300,
+                taskColor,
+                projectColor,
               ],
             ),
             borderRadius: BorderRadius.circular(16),
@@ -898,12 +885,6 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
             decoration: BoxDecoration(
               color: Colors.white.withOpacity(0.3),
               shape: BoxShape.circle,
-            ),
-            child: IconButton(
-              icon: const Icon(Icons.edit, color: Colors.white),
-              onPressed: () {
-                // Implement edit banner functionality
-              },
             ),
           ),
         ),
@@ -952,8 +933,7 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
 
   Widget _buildTeamMembers(List<User> members) {
     return SizedBox(
-      width:
-          MediaQuery.of(context).size.width -
+      width: MediaQuery.of(context).size.width -
           72, // Account for padding and icon
       child: Row(
         children: [
@@ -1002,10 +982,7 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
   }
 
   Widget _buildLeader() {
-    // In a real app, you would get the project manager
-    // For now, we'll use the first assignee or a placeholder
-    final leader = _task.assignees.isNotEmpty ? _task.assignees[0] : null;
-
+    final leader = _task.leader;
     return Row(
       children: [
         Container(
@@ -1014,17 +991,12 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
             shape: BoxShape.circle,
             border: Border.all(color: Colors.white, width: 2),
           ),
-          child:
-              leader != null
-                  ? UserAvatar(user: leader, size: 40)
-                  : const CircleAvatar(
-                    radius: 20,
-                    backgroundColor: Colors.grey,
-                    child: Icon(Icons.person, color: Colors.white),
-                  ),
+          child: UserAvatar(user: leader, size: 40),
         ),
         Text(
-          leader != null ? '${leader.name} (you)' : 'Daniel Austin (you)',
+          leader.name.isNotEmpty
+              ? '${leader.name} (leader)'
+              : 'Unknown (leader)',
           style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
         ),
       ],
@@ -1046,10 +1018,9 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
   }
 
   Widget _buildDueDate() {
-    final formattedDate =
-        _task.deadline != null
-            ? DateFormat('MMM d, yyyy').format(_task.deadline!)
-            : 'No deadline set';
+    final formattedDate = _task.deadline != null
+        ? DateFormat('MMM d, yyyy').format(_task.deadline!)
+        : 'No deadline set';
 
     return Row(
       children: [
@@ -1136,6 +1107,10 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
   }
 
   Widget _buildSubTasksSection() {
+    print('[DEBUG] Building SubTasks Section. _subtasks:');
+    for (int i = 0; i < _subtasks.length; i++) {
+      print('[DEBUG] Subtask at index $i: ${_subtasks[i]}');
+    }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -1150,12 +1125,17 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
             itemCount: _subtasks.length,
             itemBuilder: (context, index) {
               final subtask = _subtasks[index];
+              print(
+                  '[DEBUG] Building SubtaskCard for subtask at index $index: $subtask');
+              if (subtask is! Map) {
+                print('[ERROR] Subtask at index $index is not a Map: $subtask');
+                return const SizedBox.shrink();
+              }
               return SubtaskCard(
                 title: subtask['title'],
-                deadline:
-                    subtask['deadline'] != null
-                        ? DateTime.parse(subtask['deadline'])
-                        : null,
+                deadline: subtask['deadline'] != null
+                    ? DateTime.parse(subtask['deadline'])
+                    : null,
                 isCompleted: subtask['isCompleted'] ?? false,
                 onStatusChanged: (completed) async {
                   try {
@@ -1166,15 +1146,16 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
                     if (authProvider.token == null) {
                       throw Exception('Authentication token is missing');
                     }
-
+                    print(
+                        '[DEBUG] Updating subtask status for subtask: ${subtask['_id']} to $completed');
                     await _subtaskService.updateSubtask(
                       authProvider.token!,
                       subtask['_id'],
                       {'isCompleted': completed},
                     );
-
                     _loadSubtasks(); // Refresh the subtasks list
                   } catch (e) {
+                    print('[ERROR] Error updating subtask: $e');
                     ScaffoldMessenger.of(context).showSnackBar(
                       SnackBar(content: Text('Error updating subtask: $e')),
                     );
@@ -1188,34 +1169,32 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
   }
 
   Future<void> _showAddSubtaskDialog() async {
+    print('[DEBUG] Showing AddSubtaskDialog');
     final result = await showDialog<Map<String, dynamic>>(
       context: context,
       builder: (context) => _AddSubtaskDialog(taskAssignees: _task.assignees),
     );
-
+    print('[DEBUG] AddSubtaskDialog result: $result');
     if (result != null) {
       setState(() {
         _isLoading = true;
       });
-
       try {
         final authProvider = Provider.of<AuthProvider>(context, listen: false);
         if (authProvider.token == null) {
           throw Exception('Authentication token is missing');
         }
-
+        print('[DEBUG] Creating subtask with data: $result');
         await _subtaskService.createSubtask(
           authProvider.token!,
           _task.id,
           result,
         );
-
+        print('[DEBUG] Subtask created successfully, reloading subtasks');
         _loadSubtasks(); // Refresh the subtasks list
-
         setState(() {
           _isLoading = false;
         });
-
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Subtask added successfully')),
         );
@@ -1224,9 +1203,23 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
           _error = e.toString();
           _isLoading = false;
         });
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error adding subtask: $_error')),
-        );
+        print('[ERROR] Error adding subtask: $_error');
+        // Custom error message for deadline validation
+        if (_error != null &&
+            _error!.contains(
+                'Subtask deadline cannot be after the parent task deadline')) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+                content: Text(
+                    'Subtask deadline cannot be after the parent task deadline. Please choose an earlier date.')),
+          );
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+                content: Text(
+                    'Error adding subtask: adjust the deadline to be before the parent task deadline')),
+          );
+        }
       }
     }
   }
@@ -1321,23 +1314,22 @@ class _AddSubtaskDialogState extends State<_AddSubtaskDialog> {
             Wrap(
               spacing: 8,
               runSpacing: 8,
-              children:
-                  widget.taskAssignees.map((user) {
-                    final isSelected = _selectedAssignees.contains(user);
-                    return FilterChip(
-                      label: Text(user.name),
-                      selected: isSelected,
-                      onSelected: (selected) {
-                        setState(() {
-                          if (selected) {
-                            _selectedAssignees.add(user);
-                          } else {
-                            _selectedAssignees.remove(user);
-                          }
-                        });
-                      },
-                    );
-                  }).toList(),
+              children: widget.taskAssignees.map((user) {
+                final isSelected = _selectedAssignees.contains(user);
+                return FilterChip(
+                  label: Text(user.name),
+                  selected: isSelected,
+                  onSelected: (selected) {
+                    setState(() {
+                      if (selected) {
+                        _selectedAssignees.add(user);
+                      } else {
+                        _selectedAssignees.remove(user);
+                      }
+                    });
+                  },
+                );
+              }).toList(),
             ),
           ],
         ),

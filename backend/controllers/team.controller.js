@@ -3,10 +3,11 @@ const teamService = require("../services/team.service")
 const projectService = require("../services/project.service")
 const ApiResponse = require("../utils/apiResponse")
 const logger = require("../utils/logger")
+const { standardizeRole } = require("../utils/permissions")
 
 class TeamController {
   /**
-   * Add team member to project
+   * Add a new team member
    * @param {Object} req - Express request object
    * @param {Object} res - Express response object
    */
@@ -15,101 +16,181 @@ class TeamController {
       const { projectId } = req.params
       const { userId, role } = req.body
 
-      // Check if project exists and user has permission
-      const project = await projectService.getProjectById(projectId)
+      logger.info(`Adding team member request - Project: ${projectId}, User: ${userId}, Role: ${role}`)
 
-      if (req.userRole !== "Admin" && project.manager.toString() !== req.userId) {
-        return ApiResponse.error(res, "Not authorized to add team members to this project", 403)
+      // Get project to check permissions
+      const project = await projectService.getProjectById(projectId)
+      if (!project) {
+        logger.warn(`Project not found: ${projectId}`)
+        return ApiResponse.error(res, "Project not found", 404)
       }
 
-      const updatedProject = await teamService.addTeamMember(projectId, userId, role, req.userId)
-
-      return ApiResponse.success(res, "Team member added successfully", { project: updatedProject })
-    } catch (error) {
-      logger.error(`Error adding team member: ${error.message}`)
-      return ApiResponse.error(
-        res,
-        error.message === "Project not found"
-          ? "Project not found"
-          : error.message === "User not found"
-            ? "User not found"
-            : error.message === "User is already a team member"
-              ? "User is already a team member"
-              : "Error adding team member",
-        error.message === "Project not found" || error.message === "User not found" ? 404 : 400,
+      // Get current user's role in the project
+      const currentUserMember = project.members.find(
+        (member) => {
+          const memberId = member.userId._id ? member.userId._id.toString() : member.userId.toString()
+          return memberId === req.userId.toString()
+        }
       )
+      const currentUserRole = standardizeRole(currentUserMember?.role)
+
+      logger.info(`Current user role check - User: ${req.userId}, Role: ${currentUserRole}`)
+
+      // Check if user has permission to add members
+      if (currentUserRole !== "owner" && currentUserRole !== "admin") {
+        logger.warn(`Unauthorized attempt to add member by user ${req.userId} with role ${currentUserRole}`)
+        return ApiResponse.error(res, "Only project owners and admins can add members", 403)
+      }
+
+      // Standardize the new member's role
+      const standardizedRole = standardizeRole(role)
+      logger.info(`Adding member with standardized role: ${standardizedRole}`)
+
+      const member = await teamService.addTeamMember(projectId, userId, standardizedRole)
+      return ApiResponse.success(res, "Team member added successfully", { member })
+    } catch (error) {
+      logger.error(`Error adding team member: ${error.message}`, {
+        projectId: req.params.projectId,
+        userId: req.body.userId,
+        role: req.body.role,
+        error: error.stack
+      })
+      return ApiResponse.error(res, error.message || "Error adding team member", 500)
     }
   }
 
   /**
-   * Remove team member from project
+   * Remove a team member
    * @param {Object} req - Express request object
    * @param {Object} res - Express response object
    */
   async removeTeamMember(req, res) {
     try {
-      const { projectId, userId } = req.params
+      const { projectId, memberId } = req.params
 
-      // Check if project exists and user has permission
+      logger.info(`Removing team member request - Project: ${projectId}, Member: ${memberId}`)
+
+      // Get project to check permissions
       const project = await projectService.getProjectById(projectId)
-
-      if (req.userRole !== "Admin" && project.manager.toString() !== req.userId) {
-        return ApiResponse.error(res, "Not authorized to remove team members from this project", 403)
+      if (!project) {
+        logger.warn(`Project not found: ${projectId}`)
+        return ApiResponse.error(res, "Project not found", 404)
       }
 
-      const updatedProject = await teamService.removeTeamMember(projectId, userId, req.userId)
-
-      return ApiResponse.success(res, "Team member removed successfully", { project: updatedProject })
-    } catch (error) {
-      logger.error(`Error removing team member: ${error.message}`)
-      return ApiResponse.error(
-        res,
-        error.message === "Project not found"
-          ? "Project not found"
-          : error.message === "User is not a team member"
-            ? "User is not a team member"
-            : "Error removing team member",
-        error.message === "Project not found" ? 404 : 400,
+      // Get current user's role in the project
+      const currentUserMember = project.members.find(
+        (member) => {
+          const memberId = member.userId._id ? member.userId._id.toString() : member.userId.toString()
+          return memberId === req.userId.toString()
+        }
       )
+      const currentUserRole = standardizeRole(currentUserMember?.role)
+
+      // Get target member's role
+      const targetMember = project.members.find(
+        (member) => {
+          const memberUserId = member.userId._id ? member.userId._id.toString() : member.userId.toString()
+          return memberUserId === memberId
+        }
+      )
+      const targetMemberRole = standardizeRole(targetMember?.role)
+
+      logger.info(`Role check - Current user: ${currentUserRole}, Target member: ${targetMemberRole}`)
+
+      // Check if user has permission to remove members
+      if (currentUserRole !== "owner" && currentUserRole !== "admin") {
+        logger.warn(`Unauthorized attempt to remove member by user ${req.userId} with role ${currentUserRole}`)
+        return ApiResponse.error(res, "Only project owners and admins can remove members", 403)
+      }
+
+      // Prevent removing the project owner
+      if (targetMemberRole === "owner") {
+        logger.warn(`Attempt to remove project owner by user ${req.userId}`)
+        return ApiResponse.error(res, "Cannot remove the project owner", 403)
+      }
+
+      await teamService.removeTeamMember(projectId, memberId)
+      return ApiResponse.success(res, "Team member removed successfully")
+    } catch (error) {
+      logger.error(`Error removing team member: ${error.message}`, {
+        projectId: req.params.projectId,
+        memberId: req.params.memberId,
+        error: error.stack
+      })
+      return ApiResponse.error(res, error.message || "Error removing team member", 500)
     }
   }
 
   /**
-   * Update team member role
+   * Update a team member's role
    * @param {Object} req - Express request object
    * @param {Object} res - Express response object
    */
   async updateTeamMemberRole(req, res) {
     try {
-      const { projectId, userId } = req.params
+      const { projectId, memberId } = req.params
       const { role } = req.body
 
-      // Check if project exists and user has permission
-      const project = await projectService.getProjectById(projectId)
+      logger.info(`Updating team member role request - Project: ${projectId}, Member: ${memberId}, New role: ${role}`)
 
-      if (req.userRole !== "Admin" && project.manager.toString() !== req.userId) {
-        return ApiResponse.error(res, "Not authorized to update team member roles in this project", 403)
+      // Get project to check permissions
+      const project = await projectService.getProjectById(projectId)
+      if (!project) {
+        logger.warn(`Project not found: ${projectId}`)
+        return ApiResponse.error(res, "Project not found", 404)
       }
 
-      const updatedProject = await teamService.updateTeamMemberRole(projectId, userId, role, req.userId)
-
-      return ApiResponse.success(res, "Team member role updated successfully", { project: updatedProject })
-    } catch (error) {
-      logger.error(`Error updating team member role: ${error.message}`)
-      return ApiResponse.error(
-        res,
-        error.message === "Project not found"
-          ? "Project not found"
-          : error.message === "User is not a team member"
-            ? "User is not a team member"
-            : "Error updating team member role",
-        error.message === "Project not found" ? 404 : 400,
+      // Get current user's role in the project
+      const currentUserMember = project.members.find(
+        (member) => {
+          const memberId = member.userId._id ? member.userId._id.toString() : member.userId.toString()
+          return memberId === req.userId.toString()
+        }
       )
+      const currentUserRole = standardizeRole(currentUserMember?.role)
+
+      // Get target member's role
+      const targetMember = project.members.find(
+        (member) => {
+          const memberUserId = member.userId._id ? member.userId._id.toString() : member.userId.toString()
+          return memberUserId === memberId
+        }
+      )
+      const targetMemberRole = standardizeRole(targetMember?.role)
+
+      logger.info(`Role check - Current user: ${currentUserRole}, Target member: ${targetMemberRole}, New role: ${role}`)
+
+      // Only project owners can update roles
+      if (currentUserRole !== "owner") {
+        logger.warn(`Unauthorized attempt to update role by user ${req.userId} with role ${currentUserRole}`)
+        return ApiResponse.error(res, "Only project owners can update member roles", 403)
+      }
+
+      // Prevent changing the project owner's role
+      if (targetMemberRole === "owner") {
+        logger.warn(`Attempt to change project owner's role by user ${req.userId}`)
+        return ApiResponse.error(res, "Cannot change the project owner's role", 403)
+      }
+
+      // Standardize the new role
+      const standardizedRole = standardizeRole(role)
+      logger.info(`Updating member with standardized role: ${standardizedRole}`)
+
+      const member = await teamService.updateTeamMemberRole(projectId, memberId, standardizedRole)
+      return ApiResponse.success(res, "Team member role updated successfully", { member })
+    } catch (error) {
+      logger.error(`Error updating team member role: ${error.message}`, {
+        projectId: req.params.projectId,
+        memberId: req.params.memberId,
+        role: req.body.role,
+        error: error.stack
+      })
+      return ApiResponse.error(res, error.message || "Error updating team member role", 500)
     }
   }
 
   /**
-   * Get team members for a project
+   * Get all team members
    * @param {Object} req - Express request object
    * @param {Object} res - Express response object
    */
@@ -117,27 +198,40 @@ class TeamController {
     try {
       const { projectId } = req.params
 
-      // Check if project exists and user has permission
-      const project = await projectService.getProjectById(projectId)
+      logger.info(`Getting team members request - Project: ${projectId}`)
 
-      if (
-        req.userRole !== "Admin" &&
-        project.manager.toString() !== req.userId &&
-        !project.members.some((member) => member._id.toString() === req.userId)
-      ) {
-        return ApiResponse.error(res, "Not authorized to view team members for this project", 403)
+      // Get project to check permissions
+      const project = await projectService.getProjectById(projectId)
+      if (!project) {
+        logger.warn(`Project not found: ${projectId}`)
+        return ApiResponse.error(res, "Project not found", 404)
       }
 
-      const teamMembers = await teamService.getTeamMembers(projectId)
-
-      return ApiResponse.success(res, "Team members retrieved successfully", { teamMembers })
-    } catch (error) {
-      logger.error(`Error getting team members: ${error.message}`)
-      return ApiResponse.error(
-        res,
-        error.message === "Project not found" ? "Project not found" : "Error retrieving team members",
-        error.message === "Project not found" ? 404 : 500,
+      // Get current user's role in the project
+      const currentUserMember = project.members.find(
+        (member) => {
+          const memberId = member.userId._id ? member.userId._id.toString() : member.userId.toString()
+          return memberId === req.userId.toString()
+        }
       )
+      const currentUserRole = standardizeRole(currentUserMember?.role)
+
+      logger.info(`Current user role check - User: ${req.userId}, Role: ${currentUserRole}`)
+
+      // Check if user has permission to view members
+      if (!currentUserRole) {
+        logger.warn(`Unauthorized attempt to view members by user ${req.userId}`)
+        return ApiResponse.error(res, "You must be a project member to view team members", 403)
+      }
+
+      const members = await teamService.getTeamMembers(projectId)
+      return ApiResponse.success(res, "Team members retrieved successfully", { members })
+    } catch (error) {
+      logger.error(`Error getting team members: ${error.message}`, {
+        projectId: req.params.projectId,
+        error: error.stack
+      })
+      return ApiResponse.error(res, error.message || "Error retrieving team members", 500)
     }
   }
 }

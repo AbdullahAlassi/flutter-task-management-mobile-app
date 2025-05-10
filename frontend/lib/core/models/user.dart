@@ -2,7 +2,7 @@ class User {
   final String id;
   final String name;
   final String email;
-  final String role;
+  String role;
   final String? profilePicture;
   final ContactInfo? contactInfo;
   final DateTime createdAt;
@@ -87,10 +87,9 @@ class User {
       email: json['email'] ?? '',
       role: json['role'] ?? 'user',
       profilePicture: profilePicture,
-      contactInfo:
-          json['contactInfo'] != null
-              ? ContactInfo.fromJson(json['contactInfo'])
-              : null,
+      contactInfo: json['contactInfo'] != null
+          ? ContactInfo.fromJson(json['contactInfo'])
+          : null,
       createdAt: createdAt,
       updatedAt: updatedAt,
     );

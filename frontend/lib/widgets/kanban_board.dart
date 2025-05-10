@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:frontend/core/models/board.dart';
 import 'package:frontend/core/models/task.dart';
+import 'package:frontend/core/models/user.dart';
+import 'package:frontend/core/models/project.dart';
 import 'package:frontend/core/providers/auth_provider.dart';
 import 'package:frontend/core/services/board_service.dart';
 import 'package:frontend/core/services/task_service.dart';
@@ -14,6 +16,8 @@ class KanbanBoard extends StatefulWidget {
   final Map<String, List<Task>> boardTasks;
   final VoidCallback onRefresh;
   final String projectId;
+  final List<User> projectMembers;
+  final Project project;
 
   const KanbanBoard({
     super.key,
@@ -21,6 +25,8 @@ class KanbanBoard extends StatefulWidget {
     required this.boardTasks,
     required this.onRefresh,
     required this.projectId,
+    required this.projectMembers,
+    required this.project,
   });
 
   @override
@@ -59,10 +65,9 @@ class _KanbanBoardState extends State<KanbanBoard> {
     return LayoutBuilder(
       builder: (context, constraints) {
         // Calculate column width based on screen width
-        final columnWidth =
-            constraints.maxWidth < (_orderedBoards.length * 280)
-                ? 280.0
-                : constraints.maxWidth / _orderedBoards.length;
+        final columnWidth = constraints.maxWidth < (_orderedBoards.length * 280)
+            ? 280.0
+            : constraints.maxWidth / _orderedBoards.length;
 
         return SingleChildScrollView(
           controller: _scrollController,
@@ -87,6 +92,29 @@ class _KanbanBoardState extends State<KanbanBoard> {
   void _moveBoard(int currentIndex, int newIndex) async {
     if (newIndex < 0 || newIndex >= _orderedBoards.length) return;
 
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    final currentUserId = authProvider.user?.id;
+    final isOwner = widget.project.manager == currentUserId;
+    final isAdmin = authProvider.user?.role.toLowerCase() == 'admin';
+    final isManager = authProvider.user?.role.toLowerCase() == 'manager';
+
+    // Debug prints
+    debugPrint('Current User ID: $currentUserId');
+    debugPrint('Project Manager ID: ${widget.project.manager}');
+    debugPrint('Is Owner: $isOwner');
+    debugPrint('Is Admin: $isAdmin');
+    debugPrint('Is Manager: $isManager');
+
+    if (!isOwner && !isAdmin && !isManager) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+              'Only project owners, admins, and managers can reorder boards'),
+        ),
+      );
+      return;
+    }
+
     // Store original order in case we need to revert
     final originalOrder = List<Board>.from(_orderedBoards);
 
@@ -97,14 +125,12 @@ class _KanbanBoardState extends State<KanbanBoard> {
     });
 
     try {
-      final authProvider = Provider.of<AuthProvider>(context, listen: false);
       if (authProvider.token == null) return;
 
       // Prepare the board orders for the API
-      final boardOrders =
-          _orderedBoards.asMap().entries.map((entry) {
-            return {'boardId': entry.value.id, 'order': entry.key};
-          }).toList();
+      final boardOrders = _orderedBoards.asMap().entries.map((entry) {
+        return {'boardId': entry.value.id, 'order': entry.key};
+      }).toList();
 
       // Call the API to update board orders
       await _boardService.reorderBoards(
@@ -117,9 +143,9 @@ class _KanbanBoardState extends State<KanbanBoard> {
       widget.onRefresh();
     } catch (e) {
       // Show error and revert to original order
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Error reordering boards: $e')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error reordering boards: $e')),
+      );
 
       setState(() {
         _orderedBoards = originalOrder;
@@ -149,32 +175,52 @@ class _KanbanBoardState extends State<KanbanBoard> {
                   return tasks.isEmpty
                       ? _buildEmptyColumn()
                       : ListView.builder(
-                        padding: const EdgeInsets.all(8.0),
-                        itemCount: tasks.length,
-                        itemBuilder: (context, taskIndex) {
-                          return _buildDraggableTaskCard(
-                            tasks[taskIndex],
-                            board.id,
-                          );
-                        },
-                      );
+                          padding: const EdgeInsets.all(8.0),
+                          itemCount: tasks.length,
+                          itemBuilder: (context, taskIndex) {
+                            return _buildDraggableTaskCard(
+                              tasks[taskIndex],
+                              board.id,
+                            );
+                          },
+                        );
                 },
                 onWillAcceptWithDetails: (details) {
-                  // Only accept if the task is from a different board
-                  return details.data != null && details.data.board != board.id;
+                  if (details.data == null || details.data.board == board.id) {
+                    return false;
+                  }
+
+                  final authProvider =
+                      Provider.of<AuthProvider>(context, listen: false);
+                  final currentUserId = authProvider.user?.id;
+                  final isTaskLeader = details.data.leader.id == currentUserId;
+                  final isAdmin =
+                      authProvider.user?.role.toLowerCase() == 'admin';
+                  final isManager =
+                      authProvider.user?.role.toLowerCase() == 'manager';
+                  final isOwner = widget.project.manager == currentUserId;
+
+                  // Debug prints
+                  debugPrint('Current User ID: $currentUserId');
+                  debugPrint('Task Leader ID: ${details.data.leader.id}');
+                  debugPrint('Project Manager ID: ${widget.project.manager}');
+                  debugPrint('Is Task Leader: $isTaskLeader');
+                  debugPrint('Is Admin: $isAdmin');
+                  debugPrint('Is Manager: $isManager');
+                  debugPrint('Is Owner: $isOwner');
+
+                  return isTaskLeader || isAdmin || isManager || isOwner;
                 },
                 onAcceptWithDetails: (details) async {
-                  if (_isMovingTask) return; // Prevent multiple moves
+                  if (_isMovingTask) return;
 
                   setState(() {
                     _isMovingTask = true;
                   });
 
                   try {
-                    final authProvider = Provider.of<AuthProvider>(
-                      context,
-                      listen: false,
-                    );
+                    final authProvider =
+                        Provider.of<AuthProvider>(context, listen: false);
                     if (authProvider.token == null) return;
 
                     await _taskService.moveTask(
@@ -252,15 +298,8 @@ class _KanbanBoardState extends State<KanbanBoard> {
               ),
               IconButton(
                 icon: const Icon(Icons.add, color: Colors.blue),
-                onPressed: () async {
-                  final result = await Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (_) => CreateTaskScreen(boardId: board.id),
-                    ),
-                  );
-                  if (result == true) {
-                    widget.onRefresh();
-                  }
+                onPressed: () {
+                  _showCreateTaskDialog(context, board.id);
                 },
                 constraints: const BoxConstraints(),
                 padding: const EdgeInsets.only(left: 8),
@@ -288,14 +327,12 @@ class _KanbanBoardState extends State<KanbanBoard> {
               // Move right button
               IconButton(
                 icon: const Icon(Icons.arrow_forward, size: 20),
-                onPressed:
-                    index < _orderedBoards.length - 1
-                        ? () => _moveBoard(index, index + 1)
-                        : null,
-                color:
-                    index < _orderedBoards.length - 1
-                        ? Colors.blue
-                        : Colors.grey,
+                onPressed: index < _orderedBoards.length - 1
+                    ? () => _moveBoard(index, index + 1)
+                    : null,
+                color: index < _orderedBoards.length - 1
+                    ? Colors.blue
+                    : Colors.grey,
                 padding: EdgeInsets.zero,
                 constraints: const BoxConstraints(),
               ),
@@ -355,162 +392,132 @@ class _KanbanBoardState extends State<KanbanBoard> {
   }
 
   Widget _buildDraggableTaskCard(Task task, String boardId) {
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    final currentUserId = authProvider.user?.id;
+    final isTaskLeader = task.leader.id == currentUserId;
+    final isAdmin = authProvider.user?.role.toLowerCase() == 'admin';
+
     return Draggable<Task>(
       data: task,
       feedback: Material(
-        elevation: 4,
-        borderRadius: BorderRadius.circular(8),
+        elevation: 4.0,
         child: Container(
           width: 250,
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.all(8.0),
           decoration: BoxDecoration(
             color: Colors.white,
-            borderRadius: BorderRadius.circular(8),
+            borderRadius: BorderRadius.circular(8.0),
           ),
-          child: Text(
-            task.title,
-            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-          ),
+          child: Text(task.title),
         ),
       ),
-      childWhenDragging: Opacity(
-        opacity: 0.5,
-        child: _buildTaskCard(task, boardId),
+      childWhenDragging: Container(
+        height: 100,
+        margin: const EdgeInsets.symmetric(vertical: 4.0),
+        decoration: BoxDecoration(
+          color: Colors.grey[200],
+          borderRadius: BorderRadius.circular(8.0),
+        ),
       ),
-      child: _buildTaskCard(task, boardId),
-    );
-  }
-
-  Widget _buildTaskCard(Task task, String boardId) {
-    return Card(
-      margin: const EdgeInsets.only(bottom: 8),
-      // Add darker background color for task cards
-      color: Colors.grey[200],
-      child: InkWell(
-        onTap: () async {
-          final result = await Navigator.of(context).push(
-            MaterialPageRoute(builder: (_) => TaskDetailScreen(task: task)),
+      child: GestureDetector(
+        onTap: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => TaskDetailScreen(task: task),
+            ),
           );
-          if (result == true) {
-            widget.onRefresh();
-          }
         },
-        child: Padding(
-          padding: const EdgeInsets.all(12.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                task.title,
-                style: const TextStyle(
-                  fontWeight: FontWeight.bold,
-                  fontSize: 16,
-                ),
-              ),
-              if (task.deadline != null) ...[
-                const SizedBox(height: 8),
+        child: Card(
+          margin: const EdgeInsets.symmetric(vertical: 4.0),
+          child: Container(
+            padding: const EdgeInsets.all(8.0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
                 Row(
                   children: [
-                    const Icon(
-                      Icons.calendar_today,
-                      size: 14,
-                      color: Colors.grey,
+                    Expanded(
+                      child: Text(
+                        task.title,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
                     ),
-                    const SizedBox(width: 4),
+                    if (isTaskLeader)
+                      const Tooltip(
+                        message: 'Task Leader',
+                        child: Icon(
+                          Icons.star,
+                          color: Colors.amber,
+                          size: 16,
+                        ),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  task.description ?? '',
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 4),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
                     Text(
-                      DateFormat('MMM d, yyyy').format(task.deadline!),
+                      DateFormat('MMM d')
+                          .format(task.deadline ?? DateTime.now()),
                       style: TextStyle(
-                        fontSize: 12,
-                        color:
-                            _isDeadlineSoon(task.deadline!)
-                                ? Colors.red
-                                : Colors.grey,
+                        color: task.deadline?.isBefore(DateTime.now()) ?? false
+                            ? Colors.red
+                            : Colors.grey,
+                      ),
+                    ),
+                    Text(
+                      task.priority,
+                      style: TextStyle(
+                        color: _getPriorityColor(task.priority),
                       ),
                     ),
                   ],
                 ),
               ],
-              if (task.assignees.isNotEmpty) ...[
-                const SizedBox(height: 8),
-                Row(
-                  children: [
-                    ...task.assignees
-                        .take(3)
-                        .map(
-                          (user) => Padding(
-                            padding: const EdgeInsets.only(right: 0),
-                            child: CircleAvatar(
-                              radius: 12,
-                              backgroundColor: Colors.grey[300],
-                              child: Text(
-                                user.name.isNotEmpty
-                                    ? user.name[0].toUpperCase()
-                                    : '?',
-                                style: const TextStyle(
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                    if (task.assignees.length > 3)
-                      CircleAvatar(
-                        radius: 12,
-                        backgroundColor: Colors.grey[400],
-                        child: Text(
-                          '+${task.assignees.length - 3}',
-                          style: const TextStyle(
-                            fontSize: 10,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.white,
-                          ),
-                        ),
-                      ),
-                  ],
-                ),
-              ],
-              const SizedBox(height: 8),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  color: _getPriorityColor(task.priority).withOpacity(0.2),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Text(
-                  task.priority,
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: _getPriorityColor(task.priority),
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ),
-            ],
+            ),
           ),
         ),
       ),
     );
-  }
-
-  bool _isDeadlineSoon(DateTime deadline) {
-    final now = DateTime.now();
-    final difference = deadline.difference(now).inDays;
-    return difference <= 3 && difference >= 0;
   }
 
   Color _getPriorityColor(String priority) {
-    switch (priority) {
-      case 'Urgent':
+    switch (priority.toLowerCase()) {
+      case 'urgent':
         return Colors.red;
-      case 'High':
+      case 'high':
         return Colors.orange;
-      case 'Medium':
+      case 'medium':
         return Colors.blue;
-      case 'Low':
+      case 'low':
         return Colors.green;
       default:
         return Colors.grey;
+    }
+  }
+
+  void _showCreateTaskDialog(BuildContext context, String boardId) async {
+    final result = await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => CreateTaskScreen(
+          boardId: boardId,
+          projectMembers: widget.projectMembers,
+          projectId: widget.projectId,
+        ),
+      ),
+    );
+    if (result == true) {
+      widget.onRefresh();
     }
   }
 }
