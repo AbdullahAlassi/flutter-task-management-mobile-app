@@ -263,36 +263,10 @@ class _HomeContentState extends State<HomeContent> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     // Search Bar
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      decoration: BoxDecoration(
-                        color: Colors.grey[100],
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: InkWell(
-                        onTap: () {
-                          Navigator.of(context).push(
-                            MaterialPageRoute(
-                              builder: (_) => const SearchScreen(),
-                            ),
-                          );
-                        },
-                        child: Row(
-                          children: [
-                            const Icon(Icons.search, color: Colors.grey),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: Text(
-                                'Search tasks, boards, and projects',
-                                style: TextStyle(color: Colors.grey[400]),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
 
-                    const SizedBox(height: 24),
+                    Divider(
+                      color: Colors.grey,
+                    ),
 
                     // Search Results
                     if (_searchResults != null) ...[
